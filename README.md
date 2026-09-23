@@ -52,34 +52,73 @@ docker compose up -d
 # Log in at http://localhost:8000 with your bootstrap admin credentials.
 ```
 
-For local development without Docker:
+A `Makefile` wraps the common tasks: `make docker-up`, `make local-setup`,
+`make local-web`, `make local-worker`, `make test`, `make e2e` — run
+`make help` for the full list.
+
+For local development without Docker (web + worker as plain processes):
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export DJANGO_SETTINGS_MODULE=config.settings
-export SIMPLEAUDIT_LOCAL_SQLITE=1  # dev only; production uses Postgres
+cp .env.local.example .env   # SQLite + localhost defaults; edit as needed
 python manage.py migrate
-python manage.py bootstrap_admin
+python manage.py bootstrap_platform
 python manage.py runserver
 ```
+
+`manage.py` loads `.env` automatically (python-dotenv); real environment
+variables always take precedence.
+
+### Local development with real audit execution (partial Docker)
+
+Running audits requires the durable job queue (Hatchet) and the SimpleAudit
+engine. The "partial Docker" pattern keeps Postgres + Hatchet in containers
+while web and worker run on your machine:
+
+```bash
+# 1. Queue infrastructure only (Postgres + Hatchet server)
+docker compose up -d postgres hatchet-server
+
+# 2. Give the local worker the Hatchet worker token
+docker compose cp hatchet-server:/config/authdisabled-token ./hatchet-token
+
+# 3. In .env (from .env.local.example):
+#    SIMPLEAUDIT_LOCAL_SQLITE=1            (domain DB on SQLite)
+#    HATCHET_SERVER_URL=http://localhost:8888
+#    HATCHET_GRPC_URL=localhost:7077
+#    HATCHET_TOKEN_FILE=./hatchet-token
+#    SIMPLEAUDIT_ENGINE_PATH=/path/to/simpleaudit   (repo root)
+#    SIMPLEAUDIT_GIT_COMMIT=$(git -C /path/to/simpleaudit rev-parse HEAD)
+
+# 4. Terminal A: web server
+python manage.py runserver
+
+# 5. Terminal B: worker (executes audits via the engine)
+python manage.py run_worker --pool cpu
+```
+
+The Hatchet dashboard is at http://localhost:8888. `SIMPLEAUDIT_VERSION` /
+`SIMPLEAUDIT_GIT_COMMIT` must describe the checkout you point
+`SIMPLEAUDIT_ENGINE_PATH` at — the worker's provenance guard fails any run
+whose frozen manifest disagrees with the engine it loaded.
 
 ## Running tests
 
 ```bash
-# SQLite (fast, no external deps)
-SIMPLEAUDIT_LOCAL_SQLITE=1 python manage.py test core
+# SQLite (fast, no external deps) — 92 tests
+SIMPLEAUDIT_LOCAL_SQLITE=1 python manage.py test infra
 
 # PostgreSQL (requires a running instance)
 POSTGRES_HOST=localhost POSTGRES_PORT=5432 \
 POSTGRES_USER=simpleaudit POSTGRES_PASSWORD=testpass123 \
-POSTGRES_DB=simpleaudit python manage.py test core
+POSTGRES_DB=simpleaudit python manage.py test infra
 ```
 
-62 tests cover: domain invariants, scenario versioning immutability, model
+The suite covers: domain invariants, scenario versioning immutability, model
 registry secret handling, audit run freeze, worker lifecycle, finalize ordering
-guard, missing-key-as-failure, engine integration, API auth/RBAC, and the
-purge management command.
+guard, missing-key-as-failure, engine integration, API auth/RBAC, SSE events,
+comparison engine, and an all-pages smoke test (factory-boy fixtures).
 
 ## E2E smoke test
 
@@ -97,19 +136,26 @@ pass, 1 on failure.
 
 | Command | Purpose |
 |---|---|
-| `bootstrap_admin` | Create initial admin user + default project (idempotent) |
+| `bootstrap_platform` | Create initial admin user + default project (idempotent) |
+| `run_worker` | Start a Hatchet worker pool (`--pool cpu\|gpu`) |
+| `import_simpleaudit_packs` | Import SimpleAudit scenario packs into the library |
 | `purge_test_data` | Delete E2E/smoke-test artifacts by name prefix (supports `--dry-run`) |
 
 ## Project structure
 
 ```
 config/           Django settings, URLs, ASGI/WSGI
-core/             Domain models, services, views, serializers, worker, engine
-  management/     Management commands (bootstrap_admin, purge_test_data)
-  tests/          62 tests (unit, integration, E2E smoke)
-static/           Vanilla-JS SPA (app.js, app.css, favicon.svg)
-templates/        index.html (SPA shell)
+accounts/         Users, projects, memberships (bootstrap, RBAC)
+scenarios/        Scenario, ScenarioRevision, ScenarioSet, ScenarioSetVersion
+model_registry/   ModelEndpoint (secret references), AuditProfile
+audits/           AuditRun, results, events, comparison engine, services
+infra/            Engine integration, Hatchet worker, UI views, middleware
+  management/     Management commands (bootstrap_platform, run_worker, ...)
+  tests/          92 tests (unit, integration, all-pages smoke)
+static/           UI assets
+templates/        Django templates (dashboard, queue, audit detail, ...)
 deploy/           Docker assets (mock server, E2E driver, postgres init)
+e2e/              Browser E2E driver
 docs/             Phase 0 SDLC deliverables + ADRs
 app/              DEPRECATED prototype (reference only, do not extend)
 ```
