@@ -8,7 +8,10 @@
   <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-6">
     <h2 class="text-sm font-semibold text-gray-300 mb-3">Select completed runs (min 2)</h2>
     {% if runs %}
-    <div class="space-y-2 max-h-48 overflow-y-auto">
+    <!-- Search filter -->
+    <input type="text" id="compare-search" placeholder="Filter by name or set…" oninput="filterCompareRuns(this.value)"
+           class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 mb-3">
+    <div id="compare-run-list" class="space-y-2 max-h-64 overflow-y-auto">
       {% for run in runs %}
       <label class="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-overlay/50 cursor-pointer hover:bg-surface-overlay">
         <input type="checkbox" name="runs[]" value="{{ run.id }}" class="accent-[#6c8cff]">
@@ -85,4 +88,13 @@
   {% endif %}
 </div>
 {% endif %}
+
+<script>
+function filterCompareRuns(query) {
+  const q = (query || '').toLowerCase();
+  document.querySelectorAll('#compare-run-list label').forEach(el => {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
 {% endblock %}

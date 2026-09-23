@@ -25,9 +25,18 @@
 
 <!-- Runs table -->
 <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
-  <div class="flex items-center justify-between mb-3">
+  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
     <h2 class="text-sm font-semibold text-gray-300">Audit Runs</h2>
-    <a href="{% url 'new_audit' %}" class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ New Audit</a>
+    <div class="flex items-center gap-2">
+      <!-- Status filter tabs -->
+      <div class="flex gap-1 text-xs">
+        <a href="/dashboard/" class="px-2 py-1 rounded {% if not current_status %}bg-accent/20 text-accent{% else %}text-gray-500 hover:text-gray-300{% endif %}">All</a>
+        <a href="/dashboard/?status=active" class="px-2 py-1 rounded {% if current_status == 'active' %}bg-amber-900/40 text-amber-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Active</a>
+        <a href="/dashboard/?status=completed" class="px-2 py-1 rounded {% if current_status == 'completed' %}bg-emerald-900/40 text-emerald-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Done</a>
+        <a href="/dashboard/?status=failed" class="px-2 py-1 rounded {% if current_status == 'failed' %}bg-red-900/40 text-red-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Failed</a>
+      </div>
+      <a href="{% url 'new_audit' %}" class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ New Audit</a>
+    </div>
   </div>
   {% if runs %}
   <div class="overflow-x-auto">
@@ -58,7 +67,22 @@
     </table>
   </div>
   {% else %}
-  <p class="text-sm text-gray-500 py-8 text-center">No audits yet. Create your first audit to get started.</p>
+  <p class="text-sm text-gray-500 py-8 text-center">No audits found.</p>
+  {% endif %}
+
+  <!-- Pagination -->
+  {% if is_paginated %}
+  <div class="flex items-center justify-between mt-4 pt-3 border-t border-gray-800">
+    <span class="text-xs text-gray-500">Page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ paginator.count }} runs)</span>
+    <div class="flex gap-1">
+      {% if page_obj.has_previous %}
+      <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">← Prev</a>
+      {% endif %}
+      {% if page_obj.has_next %}
+      <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Next →</a>
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

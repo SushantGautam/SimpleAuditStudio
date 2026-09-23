@@ -7,6 +7,10 @@
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
   <!-- Set list -->
   <div class="space-y-2">
+    <!-- Set search -->
+    <input type="text" id="set-search" placeholder="Filter sets…" oninput="filterSets(this.value)"
+           class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 mb-2">
+    <div id="set-list">
     {% for s in sets %}
     <a href="?set={{ s.id }}"
        class="block px-4 py-3 rounded-xl border text-sm transition-colors {% if selected and selected.id == s.id %}bg-accent/15 border-accent/30 text-accent{% else %}bg-surface-raised border-gray-800 text-gray-300 hover:border-gray-600{% endif %}">
@@ -16,6 +20,7 @@
     {% empty %}
     <p class="text-sm text-gray-500">No scenario sets yet.</p>
     {% endfor %}
+    </div><!-- /set-list -->
 
     <!-- Create new set -->
     <form method="post" action="{% url 'scenario_set_create' %}" class="pt-2 border-t border-gray-800 mt-3 space-y-2">
@@ -73,8 +78,21 @@
       </div>
       {% endif %}
 
+      <!-- Scenario search + category filter -->
+      <div class="flex gap-2 mb-3">
+        <input type="text" id="scenario-search" placeholder="Search scenarios…" oninput="filterScenarios(this.value)"
+               class="flex-1 px-3 py-1.5 rounded-lg bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50">
+        <select id="category-filter" onchange="filterScenarios(document.getElementById('scenario-search').value)"
+                class="px-2 py-1.5 rounded-lg bg-surface-overlay border border-gray-700 text-xs text-gray-400">
+          <option value="">All categories</option>
+          {% for cat in categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
       <!-- Scenario list -->
-      <div class="space-y-2 mb-4 max-h-72 overflow-y-auto">
+      <div id="scenario-list" class="space-y-2 mb-4 max-h-[60vh] overflow-y-auto">
         {% for item in items %}
         <div id="scenario-{{ item.scenario.id }}" class="rounded-lg border border-gray-800 bg-surface-overlay/50 overflow-hidden">
           <div class="flex items-center justify-between px-3 py-2">
@@ -388,6 +406,29 @@ async function showVersionDiff(setId, fromVer, toVer) {
 
 function closeVersionDiff() {
   document.getElementById('version-diff-overlay').classList.add('hidden');
+}
+
+// ─── Set list search filter ─────────────────────────────────────────────────
+function filterSets(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('#set-list a').forEach(el => {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ─── Scenario card search + category filter ─────────────────────────────────
+function filterScenarios(query) {
+  const q = (query || '').toLowerCase();
+  const catFilter = document.getElementById('category-filter');
+  const cat = catFilter ? catFilter.value : '';
+  document.querySelectorAll('#scenario-list > div[id^="scenario-"]').forEach(card => {
+    const titleEl = card.querySelector('.text-sm');
+    const catEl = card.querySelector('.ml-2.text-xs');
+    const text = (titleEl ? titleEl.textContent : '') + ' ' + (catEl ? catEl.textContent : '');
+    const matchesText = !q || text.toLowerCase().includes(q);
+    const matchesCat = !cat || (catEl && catEl.textContent.trim() === cat);
+    card.style.display = (matchesText && matchesCat) ? '' : 'none';
+  });
 }
 </script>
 

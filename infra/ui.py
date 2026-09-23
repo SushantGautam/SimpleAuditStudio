@@ -90,13 +90,19 @@ def logout_view(request):
 class DashboardView(ProjectMixin, ListView):
     template_name = "dashboard.html"
     context_object_name = "runs"
+    paginate_by = 25
 
     def get_queryset(self):
-        return (
-            AuditRun.objects.filter(project=self.request.project)
-            .select_related("scenario_set_version__scenario_set")
-            .order_by("-created_at")[:50]
-        )
+        qs = AuditRun.objects.filter(project=self.request.project).select_related(
+            "scenario_set_version__scenario_set"
+        ).order_by("-created_at")
+        # Status filter via ?status=active|completed|failed|cancelled
+        status = self.request.GET.get("status", "")
+        if status == "active":
+            qs = qs.exclude(status__in=["completed", "failed", "cancelled"])
+        elif status in ("completed", "failed", "cancelled"):
+            qs = qs.filter(status=status)
+        return qs
 
     def get_context_data(self, **kw):
         ctx = super().get_context_data(**kw)
@@ -107,6 +113,7 @@ class DashboardView(ProjectMixin, ListView):
             "completed": base.filter(status="completed").count(),
             "failed": base.filter(status="failed").count(),
         }
+        ctx["current_status"] = self.request.GET.get("status", "")
         return ctx
 
 
@@ -216,7 +223,9 @@ class ScenariosView(ProjectMixin, TemplateView):
                     if viewing_version == versions[0]:
                         items = [i for i in items if i.scenario.archived_at is None]
         prev_version = (viewing_version.version - 1) if viewing_version and viewing_version.version > 1 else None
-        kw.update(sets=sets, selected=selected, items=items, versions=versions, viewing_version=viewing_version, prev_version=prev_version)
+        # Collect unique categories for filter dropdown
+        categories = sorted({i.scenario.category for i in items if i.scenario.category}) if items else []
+        kw.update(sets=sets, selected=selected, items=items, versions=versions, viewing_version=viewing_version, prev_version=prev_version, categories=categories)
         return super().get_context_data(**kw)
 
 
@@ -639,7 +648,9 @@ class CompareView(ProjectMixin, TemplateView):
     template_name = "compare.html"
 
     def get_context_data(self, **kw):
-        kw["runs"] = AuditRun.objects.filter(project=self.request.project, status="completed").order_by("-created_at")[:20]
+        kw["runs"] = AuditRun.objects.filter(project=self.request.project, status="completed").select_related(
+            "scenario_set_version__scenario_set"
+        ).order_by("-created_at")[:50]
         kw.setdefault("result", None)
         return super().get_context_data(**kw)
 
