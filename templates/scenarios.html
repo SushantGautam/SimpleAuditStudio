@@ -35,7 +35,7 @@
       <!-- Scenario list -->
       <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
         {% for sc in selected.scenarios.all %}
-        <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-overlay/50">
+        <div id="scenario-{{ sc.id }}" class="flex items-center justify-between px-3 py-2 rounded-lg{% if request.GET.scenario == sc.id|stringformat:'s' %} bg-accent/15 border border-accent/30{% else %} bg-surface-overlay/50{% endif %}">
           <div class="min-w-0">
             <span class="text-sm text-gray-200 truncate">{{ sc.name }}</span>
             {% if sc.category %}<span class="ml-2 text-xs text-gray-500">{{ sc.category }}</span>{% endif %}

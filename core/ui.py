@@ -285,9 +285,11 @@ class ModelsView(ProjectMixin, TemplateView):
 
     def get_context_data(self, **kw):
         p = self.request.project
+        highlight_id = self.request.GET.get("highlight")
         kw.update(
             endpoints=ModelEndpoint.objects.filter(project=p).order_by("display_name"),
             profiles=AuditProfile.objects.filter(project=p).order_by("name"),
+            highlight_id=highlight_id,
             error=None,
         )
         return super().get_context_data(**kw)
@@ -361,6 +363,7 @@ class AuditDetailView(ProjectMixin, DetailView):
     def get_context_data(self, **kw):
         ctx = super().get_context_data(**kw)
         run = self.object
+        set_id = run.scenario_set_version.scenario_set_id
         items = {str(vi.pk): vi for vi in ScenarioSetVersionItem.objects.filter(version=run.scenario_set_version).select_related("scenario")}
         results = []
         for sr in ScenarioResult.objects.filter(run_id=run.id):
@@ -368,11 +371,14 @@ class AuditDetailView(ProjectMixin, DetailView):
             r = sr.result or {}
             results.append({
                 "scenario_name": item.scenario.title if item else sr.version_item_id,
+                "scenario_id": item.scenario_id if item else None,
+                "set_id": set_id,
                 "severity": r.get("severity", sr.status),
                 "summary": r.get("summary", ""),
                 "status": sr.status,
             })
         ctx["results"] = results
+        ctx["set_id"] = set_id
         ctx["stages"] = ["queued", "preparing", "target_execution", "auditing", "judging", "aggregation", "completed"]
         return ctx
 

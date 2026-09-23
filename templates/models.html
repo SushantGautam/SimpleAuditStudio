@@ -2,6 +2,9 @@
 {% block title %}Models — SimpleAudit{% endblock %}
 {% block content %}
 <h1 class="text-lg font-semibold text-gray-100 mb-6">Model Registry</h1>
+{% if highlight_id %}
+<script>document.getElementById('endpoint-{{ highlight_id }}')?.scrollIntoView({behavior:'smooth',block:'center'});</script>
+{% endif %}
 
 {% if error %}
 <div class="mb-4 text-sm text-red-300 bg-red-900/30 rounded-lg px-4 py-2">{{ error }}</div>
@@ -21,7 +24,7 @@
     </tr></thead>
     <tbody>
       {% for ep in endpoints %}
-      <tr class="border-b border-gray-800/50">
+      <tr id="endpoint-{{ ep.id }}" class="border-b border-gray-800/50{% if highlight_id == ep.id|stringformat:'s' %} bg-accent/10 border-l-2 border-l-accent{% endif %}">
         <td class="px-3 py-2.5 font-medium text-gray-200 whitespace-nowrap">{{ ep.display_name }}</td>
         <td class="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">{{ ep.base_url }}</td>
         <td class="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">{{ ep.model_id|default:"—" }}</td>
