@@ -219,16 +219,23 @@ class ScenariosView(ProjectMixin, TemplateView):
         return super().get_context_data(**kw)
 
 
-def _content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
+def _content_hash(description: str, expected_behavior: list | None = None, test_prompt: str = "") -> str:
+    payload = json.dumps({
+        "description": description,
+        "expected_behavior": expected_behavior or [],
+        "test_prompt": test_prompt,
+    }, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def _create_revision(scenario, description: str, user) -> ScenarioRevision:
+def _create_revision(scenario, description: str, user, expected_behavior: list | None = None, test_prompt: str = "") -> ScenarioRevision:
     """Create the next revision for a scenario."""
     rev = scenario.revisions.count() + 1
+    eb = expected_behavior or []
     return ScenarioRevision.objects.create(
         scenario=scenario, revision=rev, description=description,
-        expected_behavior=[], content_hash=_content_hash(description),
+        expected_behavior=eb, test_prompt=test_prompt,
+        content_hash=_content_hash(description, eb, test_prompt),
         created_by=user,
     )
 
@@ -298,6 +305,8 @@ class ScenarioCreateView(ProjectMixin, View):
         name = request.POST.get("name", "").strip()
         category = request.POST.get("category", "").strip()
         desc = request.POST.get("description", "")
+        expected_behavior_raw = request.POST.get("expected_behavior", "").strip()
+        expected_behavior = [line.strip() for line in expected_behavior_raw.splitlines() if line.strip()] if expected_behavior_raw else []
         set_id = request.POST.get("set_id", "").strip()
         if name:
             key = hashlib.sha256(name.encode()).hexdigest()[:12]
@@ -305,7 +314,7 @@ class ScenarioCreateView(ProjectMixin, View):
                 project=request.project, key=key,
                 defaults={"title": name, "category": category},
             )
-            _create_revision(scenario, desc, request.user)
+            _create_revision(scenario, desc, request.user, expected_behavior=expected_behavior)
             # Auto-publish new version including this scenario
             if set_id:
                 sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
@@ -323,6 +332,8 @@ class ScenarioEditView(ProjectMixin, View):
             title = request.POST.get("title", "").strip()
             category = request.POST.get("category", "").strip()
             desc = request.POST.get("description", "")
+            expected_behavior_raw = request.POST.get("expected_behavior", "").strip()
+            expected_behavior = [line.strip() for line in expected_behavior_raw.splitlines() if line.strip()] if expected_behavior_raw else []
             if title:
                 scenario.title = title
             scenario.category = category
@@ -330,9 +341,13 @@ class ScenarioEditView(ProjectMixin, View):
 
             # Only create a new revision + publish if content actually changed
             latest_rev = scenario.revisions.order_by("-revision").first()
-            content_changed = latest_rev is None or latest_rev.description != desc
+            content_changed = (
+                latest_rev is None
+                or latest_rev.description != desc
+                or (latest_rev.expected_behavior or []) != expected_behavior
+            )
             if content_changed:
-                _create_revision(scenario, desc, request.user)
+                _create_revision(scenario, desc, request.user, expected_behavior=expected_behavior)
                 if set_id:
                     sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
                     if sset:
@@ -387,7 +402,9 @@ class ScenarioExportView(ProjectMixin, View):
         latest = sset.versions.order_by("-version").first()
         scenarios = [
             {"key": it.scenario.key, "title": it.scenario.title,
-             "description": it.revision.description, "category": it.scenario.category}
+             "description": it.revision.description, "category": it.scenario.category,
+             "expected_behavior": it.revision.expected_behavior or [],
+             "test_prompt": it.revision.test_prompt or ""}
             for it in latest.items.select_related("scenario", "revision")
         ] if latest else []
         return JsonResponse({"set_name": sset.name, "scenarios": scenarios})
@@ -407,7 +424,11 @@ class ScenarioImportView(ProjectMixin, View):
                     project=request.project, key=key,
                     defaults={"title": item.get("title", "Imported"), "category": item.get("category", "")},
                 )
-                _create_revision(scenario, item.get("description", ""), request.user)
+                _create_revision(
+                    scenario, item.get("description", ""), request.user,
+                    expected_behavior=item.get("expected_behavior") or [],
+                    test_prompt=item.get("test_prompt", ""),
+                )
                 new_ids.append(scenario.id)
             # Auto-publish after import (include newly imported scenarios)
             _publish_new_version(sset, request.user, extra_scenario_ids=new_ids)

@@ -98,14 +98,20 @@
               {% csrf_token %}
               <input type="hidden" name="set_id" value="{{ selected.id }}">
               <input type="hidden" id="orig-desc-{{ item.scenario.id }}" value="{{ item.revision.description }}">
+              <input type="hidden" id="orig-eb-{{ item.scenario.id }}" value="{% for b in item.revision.expected_behavior %}{{ b }}\n{% endfor %}">
               <div class="grid grid-cols-2 gap-2">
                 <input type="text" name="title" value="{{ item.scenario.title }}" required
                        class="px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">
                 <input type="text" name="category" value="{{ item.scenario.category }}" placeholder="Category"
                        class="px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">
               </div>
+              <label class="text-xs text-gray-500">Description (scenario prompt)</label>
               <textarea name="description" rows="3" id="desc-{{ item.scenario.id }}"
                         class="w-full px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">{{ item.revision.description }}</textarea>
+              <label class="text-xs text-gray-500">Expected behavior (one per line — judge criteria)</label>
+              <textarea name="expected_behavior" rows="2" id="eb-{{ item.scenario.id }}" placeholder="Should refuse…&#10;Should not reveal…"
+                        class="w-full px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">{% for b in item.revision.expected_behavior %}{{ b }}
+{% endfor %}</textarea>
               <div class="flex gap-2 items-center">
                 <button class="px-3 py-1 rounded bg-accent text-white text-xs">Save</button>
                 <button type="button" onclick="document.getElementById('edit-scenario-{{ item.scenario.id }}').style.display='none'" class="px-3 py-1 rounded bg-surface-overlay text-gray-400 text-xs">Cancel</button>
@@ -129,7 +135,11 @@
           <input type="text" name="category" placeholder="Category (optional)"
                  class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
         </div>
-        <textarea name="description" rows="2" placeholder="Description / expected behavior..."
+        <label class="text-xs text-gray-500">Description (scenario prompt)</label>
+        <textarea name="description" rows="2" placeholder="What should the auditor do?"
+                  class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"></textarea>
+        <label class="text-xs text-gray-500">Expected behavior (one per line — judge criteria)</label>
+        <textarea name="expected_behavior" rows="2" placeholder="Should refuse harmful requests…&#10;Should maintain boundaries…"
                   class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"></textarea>
         <button class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ Add Scenario</button>
       </form>
@@ -168,14 +178,24 @@
 {% endif %}
 
 <script>
-// Live version hint: shows "Will publish as vN" when description changes
+// Live version hint: shows "Will publish as vN" when description OR expected_behavior changes
 const CURRENT_VERSION = {{ viewing_version.version|default:0 }};
-document.querySelectorAll('textarea[id^="desc-"]').forEach(ta => {
+
+function _contentChanged(id) {
+  const descEl = document.getElementById('desc-' + id);
+  const ebEl = document.getElementById('eb-' + id);
+  const origDesc = document.getElementById('orig-desc-' + id);
+  const origEb = document.getElementById('orig-eb-' + id);
+  const descDiff = descEl && origDesc && descEl.value.trim() !== origDesc.value.trim();
+  const ebDiff = ebEl && origEb && ebEl.value.trim() !== origEb.value.trim();
+  return descDiff || ebDiff;
+}
+
+document.querySelectorAll('textarea[id^="desc-"], textarea[id^="eb-"]').forEach(ta => {
   ta.addEventListener('input', function() {
-    const id = this.id.replace('desc-', '');
-    const orig = document.getElementById('orig-desc-' + id).value;
+    const id = this.id.replace(/^(desc|eb)-/, '');
     const hint = document.getElementById('version-hint-' + id);
-    if (this.value !== orig) {
+    if (_contentChanged(id)) {
       hint.textContent = '⚡ Will publish as v' + (CURRENT_VERSION + 1);
       hint.classList.remove('hidden');
     } else {
@@ -186,9 +206,7 @@ document.querySelectorAll('textarea[id^="desc-"]').forEach(ta => {
 
 // Confirm before saving if content changed
 function confirmScenarioSave(scenarioId, form) {
-  const descEl = document.getElementById('desc-' + scenarioId);
-  const origEl = document.getElementById('orig-desc-' + scenarioId);
-  if (descEl && origEl && descEl.value !== origEl.value) {
+  if (_contentChanged(scenarioId)) {
     return confirm('Content changed — this will save as a NEW VERSION (v' + (CURRENT_VERSION + 1) + ').\n\nContinue?');
   }
   return true; // no content change, just save metadata
