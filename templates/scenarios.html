@@ -27,7 +27,7 @@
           <a href="{% url 'scenario_export' selected.id %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Export</a>
           <form method="post" action="{% url 'scenario_publish' selected.id %}" class="inline">
             {% csrf_token %}
-            <button class="px-2 py-1 rounded text-xs bg-accent/20 text-accent hover:bg-accent/30">Publish v{{ selected.versions.count|add:"1" }}</button>
+            <button class="px-3 py-1.5 rounded-lg text-xs bg-accent/20 text-accent hover:bg-accent/30 whitespace-nowrap">Publish v{{ selected.versions.count|add:"1" }}</button>
           </form>
         </div>
       </div>
