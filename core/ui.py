@@ -189,25 +189,34 @@ class ScenariosView(ProjectMixin, TemplateView):
 
 class ScenarioCreateView(ProjectMixin, View):
     def post(self, request):
-        key = request.POST.get("key", "").strip()
-        title = request.POST.get("title", "").strip()
+        name = request.POST.get("name", "").strip()
+        category = request.POST.get("category", "").strip()
         desc = request.POST.get("description", "")
-        if key and title:
+        set_id = request.POST.get("set_id", "").strip()
+        if name:
+            # Derive a stable key from the name
+            key = hashlib.sha256(name.encode()).hexdigest()[:12]
             scenario, _ = Scenario.objects.get_or_create(
                 project=request.project, key=key,
-                defaults={"title": title, "category": request.POST.get("category", "")},
+                defaults={"title": name, "category": category},
             )
             ScenarioRevision.objects.create(
                 scenario=scenario, revision=1, description=desc,
                 expected_behavior=[], content_hash=hashlib.sha256(desc.encode()).hexdigest(),
                 created_by=request.user,
             )
+            messages.success(request, f"Scenario '{name}' added.")
+        if set_id:
+            return redirect(f"/scenarios/?set={set_id}")
         return redirect("/scenarios/")
 
 
 class ScenarioDeleteView(ProjectMixin, View):
     def post(self, request, scenario_id):
         Scenario.objects.filter(pk=scenario_id, project=request.project).delete()
+        set_id = request.POST.get("set_id", "")
+        if set_id:
+            return redirect(f"/scenarios/?set={set_id}")
         return redirect("/scenarios/")
 
 
