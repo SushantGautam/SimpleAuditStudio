@@ -31,6 +31,10 @@ RUN git clone --quiet "$SIMPLEAUDIT_REPO" /opt/simpleaudit \
 
 COPY . .
 
+# Collect static files (SPA assets, admin) so Django can serve them in
+# production mode without DEBUG.
+RUN python manage.py collectstatic --noinput
+
 RUN useradd --create-home appuser \
     && mkdir -p /app/staticfiles /app/media \
     && chown -R appuser:appuser /app /opt/simpleaudit
