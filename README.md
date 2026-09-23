@@ -1,52 +1,136 @@
 # SimpleAudit Platform
 
-This repository contains a **deprecated prototype** for the SimpleAudit Platform.
+A production-quality, self-hostable platform for running AI model audits using
+the [SimpleAudit](https://github.com/kelkalot/simpleaudit) engine (Target →
+Auditor → Judge). Organizations and researchers can clone, deploy, and run real
+audits with reproducible, immutable experiment records.
 
-Do not extend the FastAPI/SQLite/in-process-queue code path as the production
-system. The canonical production design is defined in:
+## Architecture
 
-- `AGENTS.md`
-- `ROADMAP.md`
-- `docs/product-requirements.md`
-- `docs/architecture.md`
-- `docs/domain-model.md`
-- `docs/threat-model.md`
-- `docs/test-strategy.md`
-- `docs/deployment.md`
-- `docs/adr/`
+```
+Browser (vanilla-JS SPA)
+  ↓
+Django 5.2 / DRF API
+  ↓
+PostgreSQL 16 (source of truth)
+  ├── Scenario Library (append-only versioning)
+  ├── Model Registry (secret references, never raw keys)
+  ├── Audit Runs (frozen reproducibility manifests)
+  └── Durable Events (progress + results)
+  ↓
+Hatchet (durable job queue)
+  ↓
+Workers (CPU / GPU pools)
+  ↓
+SimpleAudit Engine (pinned git commit)
+  Target → Auditor → Judge
+```
 
-The production platform must use Django, PostgreSQL, a durable workflow/job
-system such as Hatchet, object storage such as MinIO/S3, authentication/RBAC,
-durable progress events, and observability. SQLite and in-process queues are
-prototype-only substitutes and are explicitly rejected for the canonical
-deployment.
+Key properties:
 
-## Prototype status
+- **Immutable audit inputs**: every AuditRun pins a ScenarioSetVersion,
+  endpoint snapshots, and generation parameters at submission time. Editing
+  scenarios or endpoints later never changes historical runs.
+- **Secrets by reference**: model credentials are stored as environment-variable
+  names (e.g. `TARGET_KEY`), resolved at execution time. Raw secrets never touch
+  the database.
+- **Durable progress**: structured events (queued → preparing → target_execution
+  → auditing → judging → aggregation → completed/failed/cancelled) persist in
+  PostgreSQL and survive restarts.
+- **Nontechnical UI**: users pick models by name, select scenario sets, and watch
+  live progress — no JSON, CLI, or queue internals exposed.
 
-The current code under `app/`, `run.py`, `seed.py`, and `templates/` is useful
-only as exploratory reference material for:
+## Quick start (Docker Compose)
 
-- domain naming
-- scenario revision/version concepts
-- reproducibility manifest shape
-- comparison warning ideas
-- SimpleAudit adapter behavior
+```bash
+git clone <repo-url> simpleaudit-platform
+cd simpleaudit-platform
+cp .env.example .env
+# Edit .env: set POSTGRES_PASSWORD, BOOTSTRAP_ADMIN_* etc.
+docker compose up -d
+# Wait for health: curl http://localhost:8000/healthz
+# Log in at http://localhost:8000 with your bootstrap admin credentials.
+```
 
-It is not a portable reference implementation and must not be treated as an
-acceptable production architecture.
+For local development without Docker:
 
-## Prototype-to-production mapping
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export DJANGO_SETTINGS_MODULE=config.settings
+export SIMPLEAUDIT_LOCAL_SQLITE=1  # dev only; production uses Postgres
+python manage.py migrate
+python manage.py bootstrap_admin
+python manage.py runserver
+```
 
-| Production component | Prototype artifact | Status |
-|---|---|---|
-| Django web/API | FastAPI in `app/api.py` | replace |
-| PostgreSQL source of truth | SQLite in `data/platform.db` | replace |
-| Durable workflow/job system | In-process queue in `app/queue.py` | replace |
-| Separate CPU/GPU workers | Single process worker in `app/worker.py` | replace |
-| Object storage artifacts | Local files under `data/` | replace |
-| Authentication/RBAC/projects | None | add |
-| Durable SSE event replay | Process-local subscribers | replace |
-| Observability | Minimal logging | add |
+## Running tests
+
+```bash
+# SQLite (fast, no external deps)
+SIMPLEAUDIT_LOCAL_SQLITE=1 python manage.py test core
+
+# PostgreSQL (requires a running instance)
+POSTGRES_HOST=localhost POSTGRES_PORT=5432 \
+POSTGRES_USER=simpleaudit POSTGRES_PASSWORD=testpass123 \
+POSTGRES_DB=simpleaudit python manage.py test core
+```
+
+62 tests cover: domain invariants, scenario versioning immutability, model
+registry secret handling, audit run freeze, worker lifecycle, finalize ordering
+guard, missing-key-as-failure, engine integration, API auth/RBAC, and the
+purge management command.
+
+## E2E smoke test
+
+With the full Docker Compose stack running (including the `mock` profile):
+
+```bash
+python deploy/e2e_smoke.py http://localhost:8000
+```
+
+This creates a scenario, model endpoints, submits an audit run, polls events
+until completion, and verifies the result row has a valid severity. Exits 0 on
+pass, 1 on failure.
+
+## Management commands
+
+| Command | Purpose |
+|---|---|
+| `bootstrap_admin` | Create initial admin user + default project (idempotent) |
+| `purge_test_data` | Delete E2E/smoke-test artifacts by name prefix (supports `--dry-run`) |
+
+## Project structure
+
+```
+config/           Django settings, URLs, ASGI/WSGI
+core/             Domain models, services, views, serializers, worker, engine
+  management/     Management commands (bootstrap_admin, purge_test_data)
+  tests/          62 tests (unit, integration, E2E smoke)
+static/           Vanilla-JS SPA (app.js, app.css, favicon.svg)
+templates/        index.html (SPA shell)
+deploy/           Docker assets (mock server, E2E driver, postgres init)
+docs/             Phase 0 SDLC deliverables + ADRs
+app/              DEPRECATED prototype (reference only, do not extend)
+```
+
+## Documentation
+
+- `AGENTS.md` — engineering mission and constraints
+- `ROADMAP.md` — phased delivery plan
+- `docs/product-requirements.md` — personas, workflows, acceptance criteria
+- `docs/architecture.md` — system design, service boundaries, data flow
+- `docs/domain-model.md` — entities, relationships, invariants
+- `docs/threat-model.md` — STRIDE analysis, mitigations
+- `docs/test-strategy.md` — test pyramid, coverage targets
+- `docs/deployment.md` — Docker Compose, env vars, upgrades
+- `docs/adr/` — Architecture Decision Records (001–006)
+
+## Deprecated prototype
+
+The `app/`, `run.py`, `seed.py`, and `data/` directories contain the original
+FastAPI/SQLite prototype. They are retained for historical reference only and
+must not be extended or used in production.
 
 ### The key invariant (from the spec)
 An `AuditRun` points at an **immutable `ScenarioSetVersion`**, never at a mutable
