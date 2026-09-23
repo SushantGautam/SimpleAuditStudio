@@ -23,37 +23,37 @@
 {% if user.is_authenticated %}
 <div class="flex h-screen overflow-hidden">
   <!-- Sidebar -->
-  <aside class="w-14 md:w-52 flex flex-col bg-surface-raised border-r border-gray-800 shrink-0">
-    <div class="h-14 flex items-center px-3 md:px-4 border-b border-gray-800">
+  <aside id="sidebar" class="w-52 transition-all duration-200 flex flex-col bg-surface-raised border-r border-gray-800 shrink-0 overflow-hidden">
+    <div class="h-14 flex items-center px-4 border-b border-gray-800">
       <span class="text-lg font-bold text-accent">SA</span>
-      <span class="hidden md:inline ml-2 text-sm font-semibold text-gray-300">SimpleAudit</span>
+      <span class="sidebar-label ml-2 text-sm font-semibold text-gray-300 whitespace-nowrap">SimpleAudit</span>
+      <button id="sidebar-toggle" class="ml-auto text-gray-500 hover:text-gray-300 text-sm" title="Toggle sidebar">⟨</button>
     </div>
     <nav class="flex-1 py-3 space-y-0.5 px-2">
-      {% url 'dashboard' as dash_url %}
-      <a href="{% url 'dashboard' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/' or request.path == '/dashboard/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
-        <span class="text-base w-5 text-center">◉</span><span class="hidden md:inline">Dashboard</span>
+      <a href="{% url 'dashboard' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm whitespace-nowrap {% if request.path == '/' or request.path == '/dashboard/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
+        <span class="text-base w-5 text-center">◉</span><span class="sidebar-label">Dashboard</span>
       </a>
-      <a href="{% url 'new_audit' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/audits/new/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
-        <span class="text-base w-5 text-center">＋</span><span class="hidden md:inline">New Audit</span>
+      <a href="{% url 'new_audit' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm whitespace-nowrap {% if request.path == '/audits/new/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
+        <span class="text-base w-5 text-center">＋</span><span class="sidebar-label">New Audit</span>
       </a>
-      <a href="{% url 'queue' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/queue/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
-        <span class="text-base w-5 text-center">≡</span><span class="hidden md:inline">Queue</span>
+      <a href="{% url 'queue' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm whitespace-nowrap {% if request.path == '/queue/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
+        <span class="text-base w-5 text-center">≡</span><span class="sidebar-label">Queue</span>
       </a>
-      <a href="{% url 'scenarios' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/scenarios/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
-        <span class="text-base w-5 text-center">▤</span><span class="hidden md:inline">Scenarios</span>
+      <a href="{% url 'scenarios' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm whitespace-nowrap {% if request.path == '/scenarios/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
+        <span class="text-base w-5 text-center">▤</span><span class="sidebar-label">Scenarios</span>
       </a>
-      <a href="{% url 'models' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/models/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
-        <span class="text-base w-5 text-center">⬡</span><span class="hidden md:inline">Models</span>
+      <a href="{% url 'models' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm whitespace-nowrap {% if request.path == '/models/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
+        <span class="text-base w-5 text-center">⬡</span><span class="sidebar-label">Models</span>
       </a>
-      <a href="{% url 'compare' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm {% if request.path == '/compare/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
-        <span class="text-base w-5 text-center">⇄</span><span class="hidden md:inline">Compare</span>
+      <a href="{% url 'compare' %}" class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm whitespace-nowrap {% if request.path == '/compare/' %}bg-accent/15 text-accent font-medium{% else %}text-gray-400 hover:text-gray-200 hover:bg-surface-overlay{% endif %}">
+        <span class="text-base w-5 text-center">⇄</span><span class="sidebar-label">Compare</span>
       </a>
     </nav>
     <div class="p-3 border-t border-gray-800">
       <div class="flex items-center gap-2">
-        <div class="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent">{{ user.username|first|upper }}</div>
-        <span class="hidden md:block text-xs text-gray-400 truncate flex-1">{{ user.username }}</span>
-        <a href="{% url 'logout' %}" class="hidden md:block text-xs text-gray-600 hover:text-red-400">⏻</a>
+        <div class="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent shrink-0">{{ user.username|first|upper }}</div>
+        <span class="sidebar-label text-xs text-gray-400 truncate flex-1">{{ user.username }}</span>
+        <a href="{% url 'logout' %}" class="sidebar-label text-xs text-gray-600 hover:text-red-400">⏻</a>
       </div>
     </div>
   </aside>
@@ -65,5 +65,24 @@
 {% else %}
 {% block auth_content %}{% endblock %}
 {% endif %}
+<script>
+(function() {
+  const btn = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+  if (!btn || !sidebar) return;
+  let collapsed = localStorage.getItem('sa-sidebar-collapsed') === '1';
+  function apply() {
+    sidebar.style.width = collapsed ? '3.5rem' : '13rem';
+    btn.textContent = collapsed ? '\u27E9' : '\u27E8';
+    document.querySelectorAll('.sidebar-label').forEach(el => el.classList.toggle('hidden', collapsed));
+  }
+  if (collapsed) apply();
+  btn.addEventListener('click', () => {
+    collapsed = !collapsed;
+    localStorage.setItem('sa-sidebar-collapsed', collapsed ? '1' : '0');
+    apply();
+  });
+})();
+</script>
 </body>
 </html>
