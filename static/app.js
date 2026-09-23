@@ -507,9 +507,27 @@ VIEWS.scenarios = async (root) => {
   try {
     const scenarios = await get(`${P()}/scenarios/`);
     listCard.innerHTML = "";
-    listCard.append(el("div", { style: "display:flex;justify-content:space-between;align-items:center;margin-bottom:12px" },
+    const importInput = document.createElement("input");
+    importInput.type = "file"; importInput.accept = ".json"; importInput.style.display = "none";
+    importInput.addEventListener("change", async () => {
+      const file = importInput.files[0]; if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const resp = await post(`${P()}/scenarios/import/`, data);
+        toast(`Imported ${resp.created}, skipped ${resp.skipped}.`);
+        navigate("scenarios");
+      } catch (e) { toast(e.message || "Import failed", true); }
+      importInput.value = "";
+    });
+    const headerRow = el("div", { style: "display:flex;justify-content:space-between;align-items:center;margin-bottom:12px" },
       el("span", {}, `${scenarios.length} scenarios`),
-      el("button", { class: "btn", onclick: () => openEditor(null) }, "+ New scenario")));
+      el("div", { class: "btn-row" },
+        el("button", { class: "btn", onclick: async () => { try { const d = await get(`${P()}/scenarios/export/`); const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "scenarios-export.json"; a.click(); URL.revokeObjectURL(a.href); } catch (e) { toast(e.message, true); } } }, "Export"),
+        el("button", { class: "btn", onclick: () => importInput.click() }, "Import"),
+        el("button", { class: "btn", onclick: () => openEditor(null) }, "+ New scenario"),
+      ));
+    listCard.append(importInput, headerRow);
     if (!scenarios.length) listCard.append(el("div", { class: "empty" }, "No scenarios yet."));
     for (const s of scenarios) {
       const rev = s.latest_revision;
