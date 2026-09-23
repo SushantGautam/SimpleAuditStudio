@@ -62,11 +62,6 @@ def _serve_static(request, path):
     raise Http404(f"Static file not found: {path}")
 
 
-def _sentry_debug(request):
-    """Trigger a test error to verify Sentry is receiving events."""
-    1 / 0  # noqa: F841
-
-
 # --- URL patterns ----------------------------------------------------------
 urlpatterns = [
     path("static/<path:path>", _serve_static, name="static-serve"),
@@ -109,6 +104,4 @@ urlpatterns = [
     path("audits/<int:run_id>/results/<int:result_id>/", ScenarioResultDetailView.as_view(), name="scenario_result_detail"),
     path("audits/<int:run_id>/export/", AuditExportView.as_view(), name="audit_export"),
     path("dashboard/export.csv", DashboardExportView.as_view(), name="dashboard_export"),
-    # Sentry debug (dev only)
-    path("sentry-debug/", _sentry_debug, name="sentry_debug"),
 ]
