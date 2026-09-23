@@ -1,0 +1,187 @@
+"""Audit run creation and freeze services."""
+import logging
+
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+
+from audits.events import append_event
+from audits.models import AuditRun
+from infra.exceptions import StableAPIError
+from model_registry.models import AuditProfile, ModelEndpoint
+from accounts.models import Project
+from scenarios.models import ScenarioSetVersion
+from scenarios.services import require_project_role
+
+logger = logging.getLogger("simpleaudit.audit")
+
+
+def _endpoint_snapshot(endpoint: ModelEndpoint) -> dict:
+    return {
+        "id": endpoint.id,
+        "display_name": endpoint.display_name,
+        "provider": endpoint.provider,
+        "base_url": endpoint.base_url,
+        "model_id": endpoint.model_id,
+        "model_revision": endpoint.model_revision,
+        "capabilities": endpoint.capabilities,
+        "default_parameters": endpoint.default_parameters,
+        "secret_reference": endpoint.secret_reference,
+        "api_key_direct": endpoint.api_key_direct,
+        "enabled": endpoint.enabled,
+    }
+
+
+def _generation_parameters(
+    profile: AuditProfile | None,
+    *,
+    max_turns_override: int | None = None,
+    language_override: str | None = None,
+    gen_config_override: dict | None = None,
+) -> dict:
+    if not profile:
+        params = {}
+    else:
+        params = {
+            "max_turns": profile.max_turns,
+            "temperature_target": profile.temperature_target,
+            "temperature_auditor": profile.temperature_auditor,
+            "temperature_judge": profile.temperature_judge,
+            "top_p": profile.top_p,
+            "max_tokens": profile.max_tokens,
+            "retry_policy": profile.retry_policy,
+            "timeout_seconds": profile.timeout_seconds,
+            "concurrency": profile.concurrency,
+            "language": profile.language,
+        }
+    # Overrides take precedence over profile values.
+    if max_turns_override is not None:
+        params["max_turns"] = max_turns_override
+    if language_override:
+        params["language"] = language_override
+    # Raw JSON override merges last (highest priority).
+    if gen_config_override:
+        params.update(gen_config_override)
+    return params
+
+
+@transaction.atomic
+def create_audit_run(
+    *,
+    project: Project,
+    user,
+    name: str,
+    scenario_set_version: ScenarioSetVersion,
+    target_endpoint: ModelEndpoint,
+    auditor_endpoint: ModelEndpoint,
+    judge_endpoint: ModelEndpoint,
+    audit_profile: AuditProfile | None = None,
+    simpleaudit_version: str | None = None,
+    git_commit: str | None = None,
+    max_turns_override: int | None = None,
+    language_override: str | None = None,
+    gen_config_override: dict | None = None,
+) -> AuditRun:
+    """Create a queued AuditRun with immutable execution inputs.
+
+    This does not enqueue work yet. The durable job system integration will add
+    workflow submission after the Phase 4 spike validates the selected system.
+    """
+    require_project_role(user, project)
+    if scenario_set_version.scenario_set.project_id != project.id:
+        raise StableAPIError(detail="Scenario set version belongs to another project.", code="cross_project_input")
+    for endpoint in (target_endpoint, auditor_endpoint, judge_endpoint):
+        if endpoint.project_id != project.id or not endpoint.enabled:
+            raise StableAPIError(detail="Model endpoint is unavailable in this project.", code="endpoint_unavailable")
+    if audit_profile and audit_profile.project_id != project.id:
+        raise StableAPIError(detail="Audit profile belongs to another project.", code="cross_project_input")
+
+    resolved_version = simpleaudit_version or getattr(settings, "SIMPLEAUDIT_VERSION", "")
+    resolved_commit = git_commit or getattr(settings, "SIMPLEAUDIT_GIT_COMMIT", "")
+    if not resolved_version or not resolved_commit or resolved_commit == "unknown":
+        raise StableAPIError(
+            detail="SimpleAudit version and git commit are required before creating production audit runs.",
+            code="simpleaudit_provenance_required",
+        )
+
+    now = timezone.now()
+    return AuditRun.objects.create(
+        project=project,
+        name=name.strip(),
+        status=AuditRun.Status.QUEUED,
+        scenario_set_version=scenario_set_version,
+        target_endpoint=target_endpoint,
+        auditor_endpoint=auditor_endpoint,
+        judge_endpoint=judge_endpoint,
+        audit_profile=audit_profile,
+        target_config_snapshot=_endpoint_snapshot(target_endpoint),
+        auditor_config_snapshot=_endpoint_snapshot(auditor_endpoint),
+        judge_config_snapshot=_endpoint_snapshot(judge_endpoint),
+        generation_parameters_snapshot=_generation_parameters(
+            audit_profile,
+            max_turns_override=max_turns_override,
+            language_override=language_override,
+            gen_config_override=gen_config_override,
+        ),
+        simpleaudit_version=resolved_version,
+        git_commit=resolved_commit,
+        runtime_metadata={"created_by_username": user.username},
+        queued_at=now,
+        total_scenarios=scenario_set_version.scenario_count,
+        created_by=user,
+    )
+
+
+def submit_audit_run(run: AuditRun) -> str | None:
+    """Enqueue durable work for a frozen AuditRun into Hatchet.
+
+    Returns the Hatchet workflow run id on success, or ``None`` if submission was
+    not possible (e.g. no live server / token). Submission is deliberately kept
+    OUTSIDE the freeze transaction: a downed job system must not roll back an
+    already-frozen experiment record. On failure the run stays ``queued`` and the
+    reason is recorded in ``runtime_metadata["submission"]`` so an operator (or a
+    later retry command) can resubmit without re-freezing inputs.
+    """
+    from infra.worker import submit_run_workflow  # lazy: needs no live server at import time
+
+    items = list(
+        run.scenario_set_version.items.select_related("scenario", "revision").order_by("position")
+    )
+    version_item_ids = [str(item.id) for item in items]
+
+    try:
+        ref = submit_run_workflow(
+            run.id,
+            version_item_ids,
+            simpleaudit_version=run.simpleaudit_version,
+            git_commit=run.git_commit,
+        )
+    except Exception as exc:  # noqa: BLE001 - any client/config error means "not submittable now"
+        _record_submission_failure(run, f"submit_failed: {exc}")
+        logger.warning("Audit %s not submitted: Hatchet unavailable (%s)", run.id, exc)
+        return None
+
+    # The per-run workflow has one step per scenario plus a dependent finalize
+    # step, so the run cannot be marked completed until every scenario has a
+    # result. wait_for_result=False enqueues and returns immediately; the worker
+    # executes the steps asynchronously.
+    append_event(run.id, "_run", "run_queued", {"scenarios": len(items)})
+    append_event(run.id, "_run", "run_stage", {"stage": "preparing"})
+    run.refresh_from_db()
+    meta = dict(run.runtime_metadata or {})
+    meta["submission"] = {
+        "status": "submitted",
+        "at": timezone.now().isoformat(),
+        "scenarios": len(items),
+        "workflow_run": getattr(ref, "id", None) or str(ref),
+    }
+    AuditRun.objects.filter(id=run.id).update(runtime_metadata=meta)
+    logger.info("Audit %s submitted to Hatchet with %d scenarios", run.id, len(items))
+    return None
+
+
+def _record_submission_failure(run: AuditRun, reason: str) -> None:
+    run.refresh_from_db()
+    meta = dict(run.runtime_metadata or {})
+    meta["submission"] = {"status": "pending", "reason": reason, "at": timezone.now().isoformat()}
+    AuditRun.objects.filter(id=run.id).update(runtime_metadata=meta)

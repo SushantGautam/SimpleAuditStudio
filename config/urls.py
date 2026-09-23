@@ -8,7 +8,7 @@ from django.urls import include, path
 from django.views.static import serve as _static_serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.ui import (
+from infra.ui import (
     AuditCancelView,
     AuditDetailView,
     CompareView,
@@ -28,7 +28,7 @@ from core.ui import (
     ScenariosView,
     logout_view,
 )
-from core.views import healthz, readyz
+from accounts.views import healthz, readyz
 
 # --- Static file serving ---------------------------------------------------
 # For the canonical Docker Compose self-hosted deployment Django serves its
@@ -62,11 +62,11 @@ urlpatterns = [
     # API
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
-    path("api/auth/", include("core.auth_urls")),
-    path("api/projects/", include("core.project_urls")),
-    path("api/", include("core.scenario_urls")),
-    path("api/", include("core.model_registry_urls")),
-    path("api/", include("core.audit_urls")),
+    path("api/auth/", include("accounts.auth_urls")),
+    path("api/projects/", include("accounts.project_urls")),
+    path("api/", include("scenarios.urls")),
+    path("api/", include("model_registry.urls")),
+    path("api/", include("audits.urls")),
     # UI (server-rendered CBVs)
     path("", IndexView.as_view(), name="index"),
     path("login/", LoginView.as_view(), name="login"),

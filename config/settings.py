@@ -36,18 +36,23 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "drf_spectacular",
-    "core",
+    # SimpleAudit Platform apps
+    "accounts",
+    "scenarios",
+    "model_registry",
+    "audits",
+    "infra",
 ]
 
 MIDDLEWARE = [
-    "core.middleware.RequestIDMiddleware",
+    "infra.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "core.middleware.ProjectMiddleware",
+    "infra.middleware.ProjectMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -71,7 +76,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-AUTH_USER_MODEL = "core.User"
+AUTH_USER_MODEL = "accounts.User"
 
 # Canonical runtime is PostgreSQL (ADR 002). The SQLite branch below is an
 # explicit, opt-in LOCAL-ONLY convenience for running the test suite on a
@@ -129,7 +134,7 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
+    "EXCEPTION_HANDLER": "infra.exceptions.api_exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
@@ -173,12 +178,12 @@ LOGGING = {
     "disable_existing_loggers": False,
     "filters": {
         "correlation": {
-            "()": "core.middleware.CorrelationLogFilter",
+            "()": "infra.middleware.CorrelationLogFilter",
         },
     },
     "formatters": {
         "json": {
-            "()": "core.logging.JsonFormatter",
+            "()": "infra.logging.JsonFormatter",
         }
     },
     "handlers": {
