@@ -355,11 +355,26 @@ class CompareView(ProjectMixin, TemplateView):
                     rdata = entry["runs"].get(col_run_id, {})
                     values.append(rdata.get("severity") or rdata.get("status") or "—")
                 rows.append({"scenario": entry["scenario_key"], "values": values})
+            # Per-run link metadata
+            run_meta = []
+            for r in raw["runs"]:
+                run_obj = AuditRun.objects.filter(id=r["id"]).select_related(
+                    "target_endpoint", "auditor_endpoint", "judge_endpoint",
+                    "scenario_set_version__scenario_set"
+                ).first()
+                run_meta.append({
+                    "id": r["id"],
+                    "target_endpoint_id": run_obj.target_endpoint_id if run_obj else None,
+                    "auditor_endpoint_id": run_obj.auditor_endpoint_id if run_obj else None,
+                    "judge_endpoint_id": run_obj.judge_endpoint_id if run_obj else None,
+                    "scenario_set_id": run_obj.scenario_set_version.scenario_set_id if run_obj and run_obj.scenario_set_version else None,
+                })
             result = {
                 "warnings": raw["warnings"],
                 "columns": columns,
                 "rows": rows,
                 "inputs": raw.get("inputs", []),
+                "run_meta": run_meta,
                 "intersection_count": raw["intersection_count"],
             }
         return self.render_to_response(self.get_context_data(result=result))

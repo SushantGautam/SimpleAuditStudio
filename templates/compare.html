@@ -32,14 +32,16 @@
   <table class="w-full text-sm">
     <thead><tr class="border-b border-gray-800">
       <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Parameter</th>
-      {% for col in result.columns %}<th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">{{ col }}</th>{% endfor %}
+      {% for meta in result.run_meta %}<th class="text-left px-3 py-2 text-xs text-gray-500 uppercase"><a href="/audits/{{ meta.id }}/" class="hover:text-accent transition-colors">#{{ meta.id }}</a></th>{% endfor %}
     </tr></thead>
     <tbody>
       {% for row in result.inputs %}
       <tr class="border-b border-gray-800/50 {% if row.differs %}bg-amber-900/10{% endif %}">
         <td class="px-3 py-2 text-gray-400">{{ row.label }}{% if row.differs %} <span class="text-amber-400 text-xs">≠</span>{% endif %}</td>
-        {% for val in row.values %}
-        <td class="px-3 py-2 text-gray-300">{{ val|default:"—" }}</td>
+        {% for cell in row.cells %}
+        <td class="px-3 py-2 text-gray-300">
+          {% if cell.url %}<a href="{{ cell.url }}" class="hover:text-accent transition-colors">{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}
+        </td>
         {% endfor %}
       </tr>
       {% endfor %}
@@ -60,12 +62,12 @@
   <table class="w-full text-sm">
     <thead><tr class="border-b border-gray-800">
       <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Scenario</th>
-      {% for col in result.columns %}<th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">{{ col }}</th>{% endfor %}
+      {% for meta in result.run_meta %}<th class="text-left px-3 py-2 text-xs text-gray-500 uppercase"><a href="/audits/{{ meta.id }}/" class="hover:text-accent transition-colors">#{{ meta.id }}</a></th>{% endfor %}
     </tr></thead>
     <tbody>
       {% for row in result.rows %}
       <tr class="border-b border-gray-800/50">
-        <td class="px-3 py-2 text-gray-300">{{ row.scenario }}</td>
+        <td class="px-3 py-2"><a href="/scenarios/?scenario={{ row.scenario }}" class="text-gray-300 hover:text-accent transition-colors">{{ row.scenario }}</a></td>
         {% for val in row.values %}
         <td class="px-3 py-2">
           {% if val == "pass" or val == "low" %}<span class="text-emerald-400">{{ val }}</span>
