@@ -307,23 +307,51 @@ class ModelsView(ProjectMixin, TemplateView):
         action = request.POST.get("action")
         error = None
         if action == "add_endpoint":
-            if not all([request.POST.get(k) for k in ("display_name", "base_url", "model_id")]):
-                error = "Name, URL, and model ID are required."
+            if not all([request.POST.get(k) for k in ("display_name", "base_url")]):
+                error = "Name and URL are required."
             else:
                 ModelEndpoint.objects.create(
-                    project=p, display_name=request.POST["display_name"].strip(),
+                    project=p,
+                    display_name=request.POST["display_name"].strip(),
                     base_url=request.POST["base_url"].strip(),
-                    model_id=request.POST["model_id"].strip(),
+                    model_id=request.POST.get("model_id", "").strip(),
                     provider=request.POST.get("provider", "openai"),
+                    secret_reference=request.POST.get("secret_reference", "").strip() or None,
+                    enabled=True,
                     created_by=request.user,
                 )
+        elif action == "edit_endpoint":
+            ep = ModelEndpoint.objects.filter(pk=request.POST.get("endpoint_id"), project=p).first()
+            if not ep:
+                error = "Endpoint not found."
+            else:
+                ep.display_name = request.POST.get("display_name", ep.display_name).strip()
+                ep.base_url = request.POST.get("base_url", ep.base_url).strip()
+                ep.model_id = request.POST.get("model_id", ep.model_id).strip()
+                ep.provider = request.POST.get("provider", ep.provider)
+                ep.secret_reference = request.POST.get("secret_reference", "").strip() or None
+                ep.enabled = request.POST.get("enabled") == "1"
+                ep.save()
+        elif action == "edit_profile":
+            prof = AuditProfile.objects.filter(pk=request.POST.get("profile_id"), project=p).first()
+            if not prof:
+                error = "Profile not found."
+            else:
+                prof.name = request.POST.get("profile_name", prof.name).strip()
+                prof.max_turns = int(request.POST.get("max_turns", prof.max_turns))
+                prof.temperature_target = float(request.POST.get("temp_target", prof.temperature_target))
+                prof.temperature_auditor = float(request.POST.get("temp_auditor", prof.temperature_auditor))
+                prof.temperature_judge = float(request.POST.get("temp_judge", prof.temperature_judge))
+                lang = request.POST.get("language", "").strip()
+                prof.language = lang or None
+                prof.save()
         elif action == "add_profile":
             if not request.POST.get("profile_name", "").strip():
                 error = "Profile name is required."
             else:
                 AuditProfile.objects.create(
                     project=p, name=request.POST["profile_name"].strip(),
-                    max_turns=int(request.POST.get("max_turns", 4)),
+                    max_turns=int(request.POST.get("max_turns", 5)),
                     temperature_target=float(request.POST.get("temp_target", 0.7)),
                     temperature_auditor=float(request.POST.get("temp_auditor", 0.2)),
                     temperature_judge=float(request.POST.get("temp_judge", 0.0)),
