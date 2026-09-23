@@ -45,4 +45,4 @@ jobs:
       - name: Migrations from empty database
         run: python manage.py migrate
       - name: Run tests
-        run: python manage.py test core
+        run: python manage.py test infra
