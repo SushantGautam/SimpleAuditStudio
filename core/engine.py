@@ -170,19 +170,24 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
     probe_prompt = gen.get("probe_prompt") or None
     judge_prompt = gen.get("judge_prompt") or None
 
-    # The engine forwards target/auditor/judge kwargs VERBATIM to the provider
-    # client CONSTRUCTOR (AnyLLM.create), and its per-turn chat calls accept no
-    # per-request generation params. So only client-level options may be passed
-    # here; per-request knobs like temperature/top_p/max_tokens would crash
-    # construction (e.g. AsyncOpenAI.__init__ rejects `temperature`). We forward
-    # a small allowlist of safe client options and drop everything else.
-    _CLIENT_KWARG_ALLOWLIST = {"timeout", "max_retries", "default_headers"}
+    # The engine forwards target/auditor/judge kwargs to the provider client
+    # CONSTRUCTOR (e.g. AsyncOpenAI.__init__). Per-request generation params
+    # (temperature, top_p, max_tokens, etc.) are NOT valid constructor args and
+    # would crash. We use a denylist of known per-request-only params to filter
+    # them out, while passing through anything else (timeout, max_retries,
+    # default_headers, organization, base_url overrides, etc.).
+    _CONSTRUCTOR_DENYLIST = {
+        "temperature", "top_p", "max_tokens", "frequency_penalty",
+        "presence_penalty", "stop", "seed", "logprobs", "top_logprobs",
+        "n", "logit_bias", "user", "response_format", "tools",
+        "tool_choice", "functions", "function_call",
+    }
 
     def _role_kwargs(cfg: dict[str, Any], gen_override: dict | None = None) -> dict[str, Any] | None:
         raw = dict(cfg.get("kwargs") or {})
         if gen_override:
             raw.update(gen_override)
-        filtered = {k: v for k, v in raw.items() if k in _CLIENT_KWARG_ALLOWLIST}
+        filtered = {k: v for k, v in raw.items() if k not in _CONSTRUCTOR_DENYLIST}
         return filtered or None
 
     # Extract per-role kwargs overrides from generation config

@@ -108,13 +108,14 @@ class RoleKwargsFilteringTest(TestCase):
         filtered = {k: v for k, v in raw.items() if k in allowlist}
         self.assertEqual(filtered, {"timeout": 60})
 
-    def test_engine_module_exposes_allowlist_contract(self):
-        # Guard against regression: the module must define the allowlist used to
+    def test_engine_module_exposes_denylist_contract(self):
+        # Guard against regression: the module must define the denylist used to
         # filter per-request params out of client-constructor kwargs.
         from core import engine
 
         src = inspect.getsource(engine.build_model_auditor)
-        self.assertIn("_CLIENT_KWARG_ALLOWLIST", src)
+        self.assertIn("_CONSTRUCTOR_DENYLIST", src)
+        self.assertIn("temperature", src)  # temperature is in the denylist
         self.assertNotIn('kw["temperature"]', src)
 
 
