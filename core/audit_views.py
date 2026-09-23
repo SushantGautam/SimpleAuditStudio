@@ -205,10 +205,11 @@ def poll_audit_run_events(request, project_id, run_id):
     return Response(list_events(run.id, after_id=after_id))
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def stream_audit_run_events(request, project_id, run_id):
     """Server-Sent Events stream of durable progress for an audit run.
+
+    Plain Django view (not DRF) to avoid content-negotiation issues with
+    text/event-stream responses. Auth is enforced via session login.
 
     Progress is durable (Postgres ``AuditEvent`` rows), so a browser reconnect or
     server restart does not lose it. The client passes its last received event id
@@ -216,16 +217,26 @@ def stream_audit_run_events(request, project_id, run_id):
     with a higher id — standard SSE replay semantics. The stream ends when a
     terminal run event (completed/failed/cancelled) is observed.
     """
+    from django.contrib.auth.decorators import login_required
+    from django.http import Http404
+
+    # This is called via URL dispatch; enforce auth manually since we're not using DRF.
+    if not request.user.is_authenticated:
+        from django.http import HttpResponse
+        return HttpResponse(status=401)
+
     set_correlation_context(audit_run_id=run_id)
     project = _get_project_or_404(project_id)
-    _require_project_access(request.user, project)
+    if not ensure_project_access(request.user, project):
+        from django.http import HttpResponse
+        return HttpResponse(status=403)
     queryset = AuditRun.objects.filter(id=run_id, project=project)
     try:
         run = queryset.get()
-    except AuditRun.DoesNotExist as exc:
-        raise StableAPIError(detail="Audit run not found.", code="audit_run_not_found", http_status=404) from exc
+    except AuditRun.DoesNotExist:
+        raise Http404("Audit run not found.")
 
-    after_id_raw = request.headers.get("Last-Event-ID") or request.query_params.get("after_id") or "0"
+    after_id_raw = request.headers.get("Last-Event-ID") or request.GET.get("after_id") or "0"
     try:
         after_id = int(after_id_raw)
     except (TypeError, ValueError):

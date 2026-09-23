@@ -4,8 +4,7 @@ Verifies that the browser-facing event stream replays from Last-Event-ID and end
 on a terminal run event, using the real Postgres/SQLite AuditEvent rows (no live
 Hatchet server required).
 """
-from django.test import TestCase
-from rest_framework.test import APIClient
+from django.test import Client, TestCase
 
 from core.audit_events import append_event
 
@@ -17,8 +16,8 @@ class AuditSSEStreamTest(TestCase):
         self.user = User.objects.create_user(username="sse-user", password="pw12345")
         self.project = Project.objects.create(name="P", slug="p")
         ProjectMembership.objects.create(project=self.project, user=self.user, role=ProjectMembership.Role.AUDITOR)
-        self.client = APIClient()
-        self.client.force_authenticate(user=self.user)
+        self.client = Client()
+        self.client.force_login(self.user)
 
     def _events_url(self, run_id):
         return f"/api/projects/{self.project.id}/audit-runs/{run_id}/events/"
@@ -86,7 +85,7 @@ class AuditSSEStreamTest(TestCase):
         from core.models import User
 
         outsider = User.objects.create_user(username="outsider", password="pw12345")
-        client2 = APIClient()
-        client2.force_authenticate(user=outsider)
+        client2 = Client()
+        client2.force_login(outsider)
         response = client2.get(self._events_url(run.id))
         self.assertEqual(response.status_code, 403)

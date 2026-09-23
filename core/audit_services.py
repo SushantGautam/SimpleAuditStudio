@@ -141,6 +141,7 @@ def submit_audit_run(run: AuditRun) -> str | None:
     # result. wait_for_result=False enqueues and returns immediately; the worker
     # executes the steps asynchronously.
     append_event(run.id, "_run", "run_queued", {"scenarios": len(items)})
+    append_event(run.id, "_run", "run_stage", {"stage": "preparing"})
     run.refresh_from_db()
     meta = dict(run.runtime_metadata or {})
     meta["submission"] = {

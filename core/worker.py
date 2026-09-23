@@ -159,6 +159,7 @@ def _scenario_execute_impl(workflow_input: ScenarioInput, ctx: Context) -> dict:
             )
 
     append_event(run_id, version_item_id, "scenario_attempted", {"attempt": attempt})
+    append_event(run_id, "_run", "run_stage", {"stage": "target_execution"})
 
     if _is_cancelled(run_id):
         append_event(run_id, version_item_id, "scenario_skipped_cancelled", {})
@@ -279,6 +280,7 @@ def _run_finalize_impl(workflow_input: FinalizeInput, ctx: Context) -> dict:
         append_event(run_id, "_run", "finalize_waiting", {"done": done, "total": total})
         raise RuntimeError(f"finalize premature: {done}/{total} scenarios have results")
 
+    append_event(run_id, "_run", "run_stage", {"stage": "aggregation"})
     append_event(run_id, "_run", "run_completed", {"scenarios": done})
     _mark_run_completed(run_id)
     return {"status": "completed", "scenarios": done}

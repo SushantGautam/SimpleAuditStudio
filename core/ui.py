@@ -364,6 +364,7 @@ class AuditDetailView(ProjectMixin, DetailView):
                 "status": sr.status,
             })
         ctx["results"] = results
+        ctx["stages"] = ["queued", "preparing", "target_execution", "auditing", "judging", "aggregation", "completed"]
         return ctx
 
 
