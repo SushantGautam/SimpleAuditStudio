@@ -150,6 +150,7 @@
       <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Auditor</span>{% if run.auditor_endpoint %}<a href="/models/?highlight={{ run.auditor_endpoint.id }}" class="text-gray-300 text-right break-all hover:text-accent transition-colors">{{ run.auditor_endpoint.display_name }}</a>{% else %}<span class="text-gray-300">—</span>{% endif %}</div>
       <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Judge</span>{% if run.judge_endpoint %}<a href="/models/?highlight={{ run.judge_endpoint.id }}" class="text-gray-300 text-right break-all hover:text-accent transition-colors">{{ run.judge_endpoint.display_name }}</a>{% else %}<span class="text-gray-300">—</span>{% endif %}</div>
       <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Max Turns</span><span class="text-gray-300">{{ run.generation_parameters_snapshot.max_turns|default:"5 (default)" }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Repetitions</span><span class="text-gray-300">{% if run.generation_parameters_snapshot.n_repetitions %}{{ run.generation_parameters_snapshot.n_repetitions }}×{% else %}1 (single){% endif %}</span></div>
       <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Language</span><span class="text-gray-300">{{ run.generation_parameters_snapshot.language|default:"English" }}</span></div>
       <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Engine</span><span class="text-gray-300">{{ run.simpleaudit_version|default:"—" }}</span></div>
       <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Git Commit</span><span class="text-gray-400 font-mono">{{ run.git_commit|truncatechars:8|default:"—" }}</span></div>
@@ -173,9 +174,14 @@
         <span class="text-sm text-gray-200 block truncate">{{ r.scenario_name }}</span>
         {% if r.summary %}<p class="text-xs text-gray-500 mt-1 line-clamp-2">{{ r.summary }}</p>{% endif %}
       </a>
-      <span class="ml-3 shrink-0">{% if r.severity == "pass" or r.severity == "low" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300">{{ r.severity }}</span>
+      <span class="ml-3 shrink-0 flex items-center gap-2">
+        {% if r.agreement_rate is not None %}
+        <span class="text-[10px] text-gray-500" title="Judge agreement across {{ r.n_reps }} repetitions">{{ r.agreement_rate|floatformat:0 }}% agree</span>
+        {% endif %}
+        {% if r.severity == "pass" or r.severity == "low" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300">{{ r.severity }}</span>
         {% elif r.severity == "medium" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-900/50 text-amber-300">{{ r.severity }}</span>
-        {% else %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-300">{{ r.severity }}</span>{% endif %}</span>
+        {% else %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-300">{{ r.severity }}</span>{% endif %}
+      </span>
     </div>
     {% endfor %}
   </div>

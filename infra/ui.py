@@ -161,6 +161,8 @@ class NewAuditView(ProjectMixin, TemplateView):
             max_turns_raw = (request.POST.get("max_turns") or "").strip()
             max_turns_override = int(max_turns_raw) if max_turns_raw else None
             language_override = (request.POST.get("language") or "").strip() or None
+            n_reps_raw = (request.POST.get("n_repetitions") or "").strip()
+            n_repetitions_override = int(n_reps_raw) if n_reps_raw and int(n_reps_raw) > 1 else None
 
             # Parse optional generation config JSON override
             gen_config_override = None
@@ -185,6 +187,7 @@ class NewAuditView(ProjectMixin, TemplateView):
                 audit_profile=AuditProfile.objects.filter(pk=request.POST.get("profile"), project=p).first() or None,
                 max_turns_override=max_turns_override,
                 language_override=language_override,
+                n_repetitions_override=n_repetitions_override,
                 gen_config_override=gen_config_override,
             )
             submit_audit_run(run)
@@ -787,18 +790,31 @@ class AuditDetailView(ProjectMixin, DetailView):
         run = self.object
         set_id = run.scenario_set_version.scenario_set_id
         items = {str(vi.pk): vi for vi in ScenarioSetVersionItem.objects.filter(version=run.scenario_set_version).select_related("scenario")}
+        n_reps = int((run.generation_parameters_snapshot or {}).get("n_repetitions") or 1)
         results = []
         for sr in ScenarioResult.objects.filter(run_id=run.id).order_by("id"):
             item = items.get(sr.version_item_id)
             r = sr.result or {}
+            # When n_repetitions > 1, the result dict has "reps" + "aggregated_severity"
+            if n_reps > 1 and "reps" in r:
+                severity = r.get("aggregated_severity", sr.status)
+                agreement = r.get("agreement_rate")
+                sev_dist = r.get("severity_distribution", {})
+            else:
+                severity = r.get("severity", sr.status)
+                agreement = None
+                sev_dist = None
             results.append({
                 "result_id": sr.pk,
                 "scenario_name": item.scenario.title if item else sr.version_item_id,
                 "scenario_id": item.scenario_id if item else None,
                 "set_id": set_id,
-                "severity": r.get("severity", sr.status),
+                "severity": severity,
                 "summary": r.get("summary", ""),
                 "status": sr.status,
+                "agreement_rate": agreement,
+                "severity_distribution": sev_dist,
+                "n_reps": n_reps if (n_reps > 1 and "reps" in r) else None,
             })
         ctx["results"] = results
         ctx["set_id"] = set_id
@@ -832,15 +848,42 @@ class ScenarioResultDetailView(ProjectMixin, TemplateView):
 
         # Parse result JSON into structured sections
         result_data = sr.result or {}
-        conversation = result_data.get("conversation", [])
-        issues = result_data.get("issues_found", result_data.get("issues", []))
-        rationale = result_data.get("rationale", result_data.get("evidence", result_data.get("judge_rationale", "")))
-        severity = result_data.get("severity", sr.status)
-        summary = result_data.get("summary", "")
+
+        # Detect repeated format (n_repetitions > 1)
+        is_repeated = "reps" in result_data and isinstance(result_data.get("reps"), list)
+        reps = result_data.get("reps", []) if is_repeated else []
+        aggregated_severity = result_data.get("aggregated_severity", "") if is_repeated else ""
+        agreement_rate = result_data.get("agreement_rate") if is_repeated else None
+        severity_distribution = result_data.get("severity_distribution", {}) if is_repeated else {}
+        n_reps = len(reps) if is_repeated else 0
+
+        if is_repeated:
+            # Show the modal rep's details as the "primary" view
+            primary_rep = reps[0] if reps else {}
+            severity = aggregated_severity or primary_rep.get("severity", sr.status)
+        else:
+            primary_rep = result_data
+            severity = result_data.get("severity", sr.status)
+
+        conversation = primary_rep.get("conversation", [])
+        issues = primary_rep.get("issues_found", primary_rep.get("issues", []))
+        rationale = primary_rep.get("rationale", primary_rep.get("evidence", primary_rep.get("judge_rationale", "")))
+        summary = primary_rep.get("summary", "")
+
+        # Per-rep summary table for repeated results
+        rep_summaries = []
+        if is_repeated:
+            for i, rep in enumerate(reps):
+                rep_summaries.append({
+                    "index": i + 1,
+                    "severity": rep.get("severity", ""),
+                    "tokens": rep.get("tokens_used", rep.get("total_tokens", "")),
+                    "latency_ms": rep.get("latency_ms", ""),
+                })
 
         # Collect remaining keys not already displayed as named sections
-        known_keys = {"conversation", "issues_found", "issues", "rationale", "evidence", "judge_rationale", "severity", "summary"}
-        other_keys = {k: v for k, v in result_data.items() if k not in known_keys}
+        known_keys = {"conversation", "issues_found", "issues", "rationale", "evidence", "judge_rationale", "severity", "summary", "reps", "aggregated_severity", "agreement_rate", "severity_distribution", "n_repetitions"}
+        other_keys = {k: v for k, v in primary_rep.items() if k not in known_keys}
 
         kw.update(
             run=run,
@@ -853,6 +896,13 @@ class ScenarioResultDetailView(ProjectMixin, TemplateView):
             rationale=rationale,
             other_keys=other_keys,
             raw_json=json.dumps(result_data, indent=2, ensure_ascii=False) if result_data else "",
+            is_repeated=is_repeated,
+            reps=reps,
+            rep_summaries=rep_summaries,
+            aggregated_severity=aggregated_severity,
+            agreement_rate=agreement_rate,
+            severity_distribution=severity_distribution,
+            n_reps=n_reps,
         )
         return super().get_context_data(**kw)
 

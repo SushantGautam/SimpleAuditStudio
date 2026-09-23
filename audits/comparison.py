@@ -62,6 +62,11 @@ def compare_runs(project, run_ids: list[int]) -> dict:
     if len(sa_versions) > 1:
         warnings.append(f"Different SimpleAudit versions: {', '.join(sorted(sa_versions))}.")
 
+    # Check: same n_repetitions?
+    n_reps_set = {(r.generation_parameters_snapshot or {}).get("n_repetitions", 1) for r in runs}
+    if len(n_reps_set) > 1:
+        warnings.append(f"Different repetition counts: {', '.join(str(n)+'×' for n in sorted(n_reps_set))}. Stability metrics are not directly comparable.")
+
     # Build per-run result map: scenario_key -> result row.
     # version_item_id is a CharField (string of the PK), so we resolve keys via
     # the pinned ScenarioSetVersionItem rows.
@@ -82,11 +87,20 @@ def compare_runs(project, run_ids: list[int]) -> dict:
         m = {}
         for row in rows:
             key = item_map.get(row.version_item_id, f"item_{row.version_item_id}")
+            r_data = row.result or {}
+            # For repeated results, use aggregated severity
+            if "reps" in r_data and isinstance(r_data.get("reps"), list):
+                sev = r_data.get("aggregated_severity")
+                agree = r_data.get("agreement_rate")
+                summary = f"{sev} ({int(agree*100)}% agreement)" if agree is not None else sev
+            else:
+                sev = r_data.get("severity")
+                summary = r_data.get("summary")
             m[key] = {
                 "status": row.status,
                 "attempts": row.attempts,
-                "severity": (row.result or {}).get("severity"),
-                "summary": (row.result or {}).get("summary"),
+                "severity": sev,
+                "summary": summary,
             }
         run_results[run.id] = m
 
@@ -124,6 +138,7 @@ def compare_runs(project, run_ids: list[int]) -> dict:
         ("Max tokens", lambda r: (r.generation_parameters_snapshot or {}).get("max_tokens", "—")),
         ("Top-p", lambda r: (r.generation_parameters_snapshot or {}).get("top_p", "—")),
         ("Max turns", lambda r: (r.generation_parameters_snapshot or {}).get("max_turns", "—")),
+        ("Repetitions", lambda r: str((r.generation_parameters_snapshot or {}).get("n_repetitions", 1)) + "×"),
         ("Concurrency", lambda r: (r.generation_parameters_snapshot or {}).get("concurrency", "—")),
         ("Language", lambda r: (r.generation_parameters_snapshot or {}).get("language", "—")),
     ]

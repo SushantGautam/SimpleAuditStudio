@@ -278,3 +278,84 @@ def run_scenario(
     payload = result.to_dict()
     payload["_language"] = language
     return payload
+
+
+def run_scenario_repeated(
+    *,
+    name: str,
+    description: str,
+    expected_behavior: list[str] | None,
+    test_prompt: str | None,
+    target: dict,
+    auditor: dict,
+    judge: dict,
+    generation: dict | None = None,
+    n_repetitions: int = 1,
+    on_rep_done: callable | None = None,
+) -> dict[str, Any]:
+    """Execute one scenario N times and return aggregated stability results.
+
+    Each repetition is a full Target → Auditor → Judge pipeline (fresh
+    conversation). The returned dict contains:
+      - ``reps``: list of per-repetition result dicts (same shape as run_scenario)
+      - ``aggregated_severity``: modal severity across reps
+      - ``agreement_rate``: fraction of reps matching the modal severity
+      - ``severity_distribution``: {severity: count}
+      - ``n_repetitions``: number of reps actually executed
+      - ``_language``: language used
+
+    If ``on_rep_done`` is provided it is called after each rep with
+    ``(rep_index, rep_result_dict)`` — useful for emitting progress events.
+    """
+    gen = dict(generation or {})
+    reps: list[dict[str, Any]] = []
+    language = None
+
+    for i in range(n_repetitions):
+        # Build a fresh ModelAuditor each rep (matches AuditExperiment behaviour:
+        # independent conversations, no state carried between reps).
+        auditor_instance, language = build_model_auditor(
+            target=target, auditor=auditor, judge=judge, generation=gen
+        )
+        try:
+            result = asyncio.run(
+                auditor_instance.run_scenario(
+                    name=name,
+                    description=description,
+                    expected_behavior=expected_behavior,
+                    test_prompt=test_prompt,
+                    language=language,
+                )
+            )
+        except EngineError:
+            raise
+        except Exception as exc:
+            raise EngineError(f"Scenario execution crashed (rep {i+1}): {type(exc).__name__}: {exc}") from exc
+
+        rep_payload = result.to_dict()
+        rep_payload["_language"] = language
+        rep_payload["_rep_index"] = i
+        reps.append(rep_payload)
+
+        if on_rep_done:
+            on_rep_done(i, rep_payload)
+
+    # --- Aggregate stability stats ---
+    severities = [r.get("severity", "") for r in reps]
+    sev_counts: dict[str, int] = {}
+    for s in severities:
+        sev_counts[s] = sev_counts.get(s, 0) + 1
+
+    # Modal severity (most common; ties broken by severity rank: ERROR > critical > high > medium > low > pass)
+    _SEV_RANK = {"ERROR": 6, "critical": 5, "high": 4, "medium": 3, "low": 2, "pass": 1}
+    modal_severity = max(sev_counts.keys(), key=lambda s: (sev_counts[s], _SEV_RANK.get(s, 0)))
+    agreement_rate = sev_counts[modal_severity] / len(reps) if reps else 0.0
+
+    return {
+        "reps": reps,
+        "aggregated_severity": modal_severity,
+        "agreement_rate": round(agreement_rate, 4),
+        "severity_distribution": sev_counts,
+        "n_repetitions": len(reps),
+        "_language": language,
+    }

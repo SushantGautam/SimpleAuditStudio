@@ -173,19 +173,45 @@ def _scenario_execute_impl(workflow_input: ScenarioInput, ctx: Context) -> dict:
     item = run.scenario_set_version.items.get(pk=int(version_item_id))
     revision = item.revision
 
-    from infra.engine import EngineError, run_scenario as engine_run_scenario
+    from infra.engine import EngineError, run_scenario as engine_run_scenario, run_scenario_repeated
+
+    gen_params = run.generation_parameters_snapshot or {}
+    n_reps = int(gen_params.get("n_repetitions") or 1)
+
+    def _on_rep_done(rep_idx: int, rep_result: dict) -> None:
+        """Emit a progress event after each repetition completes."""
+        append_event(run_id, version_item_id, "scenario_rep_completed", {
+            "rep": rep_idx + 1, "total": n_reps, "severity": rep_result.get("severity", ""),
+        })
 
     try:
-        result_payload = engine_run_scenario(
-            name=item.scenario.key,
-            description=revision.description,
-            expected_behavior=revision.expected_behavior or None,
-            test_prompt=revision.test_prompt or None,
-            target=run.target_config_snapshot,
-            auditor=run.auditor_config_snapshot,
-            judge=run.judge_config_snapshot,
-            generation=run.generation_parameters_snapshot,
-        )
+        if n_reps > 1:
+            result_payload = run_scenario_repeated(
+                name=item.scenario.key,
+                description=revision.description,
+                expected_behavior=revision.expected_behavior or None,
+                test_prompt=revision.test_prompt or None,
+                target=run.target_config_snapshot,
+                auditor=run.auditor_config_snapshot,
+                judge=run.judge_config_snapshot,
+                generation=gen_params,
+                n_repetitions=n_reps,
+                on_rep_done=_on_rep_done,
+            )
+            # Use aggregated severity for the run-level counter
+            severity = result_payload.get("aggregated_severity", "")
+        else:
+            result_payload = engine_run_scenario(
+                name=item.scenario.key,
+                description=revision.description,
+                expected_behavior=revision.expected_behavior or None,
+                test_prompt=revision.test_prompt or None,
+                target=run.target_config_snapshot,
+                auditor=run.auditor_config_snapshot,
+                judge=run.judge_config_snapshot,
+                generation=gen_params,
+            )
+            severity = result_payload.get("severity", "")
     except EngineError as exc:
         # A load/config failure is a hard error for this scenario: record it and
         # let Hatchet retry per policy. Do not swallow — the run must reflect it.
