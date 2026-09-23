@@ -330,7 +330,7 @@ class ModelsView(ProjectMixin, TemplateView):
                     base_url=request.POST["base_url"].strip(),
                     model_id=request.POST.get("model_id", "").strip(),
                     provider=request.POST.get("provider", "openai"),
-                    secret_reference=request.POST.get("secret_reference", "").strip() or None,
+                    secret_reference=request.POST.get("secret_reference", "").strip(),
                     api_key_direct=request.POST.get("api_key_direct", "").strip(),
                     enabled=True,
                     created_by=request.user,
@@ -344,7 +344,7 @@ class ModelsView(ProjectMixin, TemplateView):
                 ep.base_url = request.POST.get("base_url", ep.base_url).strip()
                 ep.model_id = request.POST.get("model_id", ep.model_id).strip()
                 ep.provider = request.POST.get("provider", ep.provider)
-                ep.secret_reference = request.POST.get("secret_reference", "").strip() or None
+                ep.secret_reference = request.POST.get("secret_reference", "").strip()
                 ep.api_key_direct = request.POST.get("api_key_direct", "").strip()
                 ep.enabled = request.POST.get("enabled") == "1"
                 ep.save()

@@ -34,13 +34,14 @@
 
       <!-- Scenario list -->
       <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
-        {% for sc in selected.scenarios.all %}
-        <div id="scenario-{{ sc.id }}" class="flex items-center justify-between px-3 py-2 rounded-lg{% if request.GET.scenario == sc.id|stringformat:'s' %} bg-accent/15 border border-accent/30{% else %} bg-surface-overlay/50{% endif %}">
+        {% for item in items %}
+        <div id="scenario-{{ item.scenario.id }}" class="flex items-center justify-between px-3 py-2 rounded-lg{% if request.GET.scenario == item.scenario.id|stringformat:'s' %} bg-accent/15 border border-accent/30{% else %} bg-surface-overlay/50{% endif %}">
           <div class="min-w-0">
-            <span class="text-sm text-gray-200 truncate">{{ sc.name }}</span>
-            {% if sc.category %}<span class="ml-2 text-xs text-gray-500">{{ sc.category }}</span>{% endif %}
+            <span class="text-sm text-gray-200 truncate">{{ item.scenario.title }}</span>
+            {% if item.scenario.category %}<span class="ml-2 text-xs text-gray-500">{{ item.scenario.category }}</span>{% endif %}
+            <span class="ml-2 text-xs text-gray-600">rev {{ item.revision.revision }}</span>
           </div>
-          <form method="post" action="{% url 'scenario_delete' sc.id %}" onsubmit="return confirm('Delete?')">
+          <form method="post" action="{% url 'scenario_delete' item.scenario.id %}" onsubmit="return confirm('Delete?')">
             {% csrf_token %}
             <input type="hidden" name="set_id" value="{{ selected.id }}">
             <button class="text-xs text-gray-600 hover:text-red-400">✕</button>
