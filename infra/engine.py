@@ -292,11 +292,15 @@ def run_scenario_repeated(
     generation: dict | None = None,
     n_repetitions: int = 1,
     on_rep_done: callable | None = None,
+    cancel_event: asyncio.Event | None = None,
 ) -> dict[str, Any]:
-    """Execute one scenario N times and return aggregated stability results.
+    """Execute one scenario N times using AuditExperiment.run_scenario_reps().
 
-    Each repetition is a full Target → Auditor → Judge pipeline (fresh
-    conversation). The returned dict contains:
+    Delegates to the SimpleAudit engine's native multi-rep execution, which
+    provides: fresh ModelAuditor per rep, auto-retry on ERROR, cancellation,
+    and typed callbacks.
+
+    The returned dict contains:
       - ``reps``: list of per-repetition result dicts (same shape as run_scenario)
       - ``aggregated_severity``: modal severity across reps
       - ``agreement_rate``: fraction of reps matching the modal severity
@@ -306,14 +310,191 @@ def run_scenario_repeated(
 
     If ``on_rep_done`` is provided it is called after each rep with
     ``(rep_index, rep_result_dict)`` — useful for emitting progress events.
+    If ``cancel_event`` is set, remaining reps are skipped.
     """
+    gen = dict(generation or {})
+    language = gen.get("language") or "English"
+
+    # Build the scenario dict in the format the engine expects
+    scenario: dict[str, Any] = {
+        "name": name,
+        "description": description,
+    }
+    if expected_behavior:
+        scenario["expected_behavior"] = expected_behavior
+    if test_prompt:
+        scenario["test_prompt"] = test_prompt
+
+    # Build a single-model AuditExperiment configured from the frozen snapshots.
+    # This reuses the engine's _merge_common + ModelAuditor construction path,
+    # including its retry logic and error handling.
+    _ensure_engine_on_path()
+    try:
+        from simpleaudit.experiment import AuditExperiment
+    except ImportError:
+        # Fallback: older engine versions without AuditExperiment.run_scenario_reps
+        return _run_scenario_repeated_fallback(
+            name=name, description=description,
+            expected_behavior=expected_behavior, test_prompt=test_prompt,
+            target=target, auditor=auditor, judge=judge,
+            generation=generation, n_repetitions=n_repetitions,
+            on_rep_done=on_rep_done,
+        )
+
+    # Construct the model config from the frozen target snapshot
+    target_cfg = _auditor_kwargs_from_snapshot(target)
+    auditor_cfg = _auditor_kwargs_from_snapshot(auditor)
+    judge_cfg = _auditor_kwargs_from_snapshot(judge)
+
+    _validate_secrets(("target", target), ("auditor", auditor), ("judge", judge))
+
+    max_turns = int(gen.get("max_turns") or 5)
+    max_retries = int(gen.get("max_retries") or 2)
+    retry_backoff = float(gen.get("retry_backoff") or 0.5)
+    system_prompt = gen.get("system_prompt") or None
+    probe_prompt = gen.get("probe_prompt") or None
+    judge_prompt = gen.get("judge_prompt") or None
+
+    gen_params = gen.get("params") or None
+    gen_target_params = gen.get("target_params") or None
+    gen_judge_params = gen.get("judge_params") or None
+    gen_auditor_params = gen.get("auditor_params") or None
+
+    def _role_kwargs(cfg: dict[str, Any], gen_override: dict | None = None) -> dict[str, Any] | None:
+        raw = dict(cfg.get("kwargs") or {})
+        if gen_override:
+            raw.update(gen_override)
+        return raw or None
+
+    target_ctor_kwargs = gen.get("target_kwargs") or None
+    auditor_ctor_kwargs = gen.get("auditor_kwargs") or None
+    judge_ctor_kwargs = gen.get("judge_kwargs") or None
+
+    # Single-model experiment: the model entry carries the target config,
+    # while judge/auditor are set at the experiment level.
+    # All keys here flow through _merge_common → ModelAuditor(**merged).
+    model_entry: dict[str, Any] = {
+        "model": target_cfg["model"],
+        "provider": target_cfg["provider"],
+        "base_url": target_cfg["base_url"],
+        "api_key": target_cfg["api_key"],
+        "label": f"{target_cfg['model']} (platform)",
+        # Constructor kwargs for the any_llm client (timeout, headers, etc.)
+        "kwargs": _role_kwargs(target_cfg, target_ctor_kwargs),
+        # Per-request generation params (temperature, top_p, max_tokens, etc.)
+        "params": gen_params,
+        "target_params": gen_target_params,
+        "judge_params": gen_judge_params,
+        "auditor_params": gen_auditor_params,
+        # Retry config from the frozen generation profile
+        "max_retries": max_retries,
+        "retry_backoff": retry_backoff,
+        # System prompt (if configured)
+        "system_prompt": system_prompt,
+    }
+    # Remove None values — ModelAuditor treats None differently from absent
+    # for some fields (e.g., params=None means "no override" which is fine,
+    # but we want to be explicit).
+    model_entry = {k: v for k, v in model_entry.items() if v is not None}
+
+    # Track rep completions via callback
+    reps: list[dict[str, Any]] = []
+
+    def _on_rep_done(label: str, rep_index: int, total: int, result) -> None:
+        if result is not None:
+            payload = result.to_dict()
+            payload["_rep_index"] = rep_index
+            reps.append(payload)
+            if on_rep_done:
+                on_rep_done(rep_index, payload)
+
+    try:
+        experiment = AuditExperiment(
+            models=[model_entry],
+            judge_model=auditor_cfg["model"],
+            judge_provider=auditor_cfg["provider"],
+            judge_base_url=auditor_cfg["base_url"],
+            judge_api_key=auditor_cfg["api_key"],
+            judge_kwargs=_role_kwargs(auditor_cfg, judge_ctor_kwargs),
+            auditor_model=auditor_cfg["model"],
+            auditor_provider=auditor_cfg["provider"],
+            auditor_base_url=auditor_cfg["base_url"],
+            auditor_api_key=auditor_cfg["api_key"],
+            auditor_kwargs=_role_kwargs(auditor_cfg, auditor_ctor_kwargs),
+            probe_prompt=probe_prompt,
+            judge_prompt=judge_prompt,
+            json_format=True,
+            verbose=False,
+            show_progress=False,
+            n_repetitions=n_repetitions,
+            on_rep_done=_on_rep_done,
+            cancel_event=cancel_event,
+            max_retries_per_rep=max_retries,
+        )
+    except Exception as exc:
+        raise EngineError(f"Failed to construct AuditExperiment: {type(exc).__name__}: {exc}") from exc
+
+    try:
+        results = asyncio.run(
+            experiment.run_scenario_reps(
+                model_index=0,
+                scenario=scenario,
+                max_turns=max_turns,
+                language=language,
+            )
+        )
+    except EngineError:
+        raise
+    except Exception as exc:
+        raise EngineError(f"Scenario execution crashed: {type(exc).__name__}: {exc}") from exc
+
+    # If the callback didn't fire (e.g., all reps were cached/skipped),
+    # fall back to the returned results list.
+    if not reps and results:
+        for i, r in enumerate(results):
+            payload = r.to_dict()
+            payload["_rep_index"] = i
+            reps.append(payload)
+
+    # --- Aggregate stability stats ---
+    severities = [r.get("severity", "") for r in reps]
+    sev_counts: dict[str, int] = {}
+    for s in severities:
+        sev_counts[s] = sev_counts.get(s, 0) + 1
+
+    _SEV_RANK = {"ERROR": 6, "critical": 5, "high": 4, "medium": 3, "low": 2, "pass": 1}
+    modal_severity = max(sev_counts.keys(), key=lambda s: (sev_counts[s], _SEV_RANK.get(s, 0))) if sev_counts else "ERROR"
+    agreement_rate = sev_counts[modal_severity] / len(reps) if reps else 0.0
+
+    return {
+        "reps": reps,
+        "aggregated_severity": modal_severity,
+        "agreement_rate": round(agreement_rate, 4),
+        "severity_distribution": sev_counts,
+        "n_repetitions": len(reps),
+        "_language": language,
+    }
+
+
+def _run_scenario_repeated_fallback(
+    *,
+    name: str,
+    description: str,
+    expected_behavior: list[str] | None,
+    test_prompt: str | None,
+    target: dict,
+    auditor: dict,
+    judge: dict,
+    generation: dict | None = None,
+    n_repetitions: int = 1,
+    on_rep_done: callable | None = None,
+) -> dict[str, Any]:
+    """Fallback for engine versions without AuditExperiment.run_scenario_reps."""
     gen = dict(generation or {})
     reps: list[dict[str, Any]] = []
     language = None
 
     for i in range(n_repetitions):
-        # Build a fresh ModelAuditor each rep (matches AuditExperiment behaviour:
-        # independent conversations, no state carried between reps).
         auditor_instance, language = build_model_auditor(
             target=target, auditor=auditor, judge=judge, generation=gen
         )
@@ -340,15 +521,13 @@ def run_scenario_repeated(
         if on_rep_done:
             on_rep_done(i, rep_payload)
 
-    # --- Aggregate stability stats ---
     severities = [r.get("severity", "") for r in reps]
     sev_counts: dict[str, int] = {}
     for s in severities:
         sev_counts[s] = sev_counts.get(s, 0) + 1
 
-    # Modal severity (most common; ties broken by severity rank: ERROR > critical > high > medium > low > pass)
     _SEV_RANK = {"ERROR": 6, "critical": 5, "high": 4, "medium": 3, "low": 2, "pass": 1}
-    modal_severity = max(sev_counts.keys(), key=lambda s: (sev_counts[s], _SEV_RANK.get(s, 0)))
+    modal_severity = max(sev_counts.keys(), key=lambda s: (sev_counts[s], _SEV_RANK.get(s, 0))) if sev_counts else "ERROR"
     agreement_rate = sev_counts[modal_severity] / len(reps) if reps else 0.0
 
     return {
