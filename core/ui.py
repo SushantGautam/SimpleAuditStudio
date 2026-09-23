@@ -341,6 +341,7 @@ class CompareView(ProjectMixin, TemplateView):
 class AuditDetailView(ProjectMixin, DetailView):
     template_name = "audit_detail.html"
     context_object_name = "run"
+    pk_url_kwarg = "run_id"
     queryset = AuditRun.objects.select_related(
         "scenario_set_version__scenario_set", "target_endpoint", "auditor_endpoint", "judge_endpoint"
     )
