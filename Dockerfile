@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Pin the engine commit for reproducible builds. Override with
 # --build-arg SIMPLEAUDIT_COMMIT=<sha> to audit against a different revision.
 ARG SIMPLEAUDIT_REPO=https://github.com/kelkalot/simpleaudit.git
-ARG SIMPLEAUDIT_COMMIT=bc32a753e28b7e3b9fb09ac4479292f1c275a03b
+ARG SIMPLEAUDIT_COMMIT=843d581
 
 WORKDIR /app
 

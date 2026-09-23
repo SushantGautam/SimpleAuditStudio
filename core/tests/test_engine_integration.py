@@ -108,15 +108,17 @@ class RoleKwargsFilteringTest(TestCase):
         filtered = {k: v for k, v in raw.items() if k in allowlist}
         self.assertEqual(filtered, {"timeout": 60})
 
-    def test_engine_module_exposes_denylist_contract(self):
-        # Guard against regression: the module must define the denylist used to
-        # filter per-request params out of client-constructor kwargs.
+    def test_engine_uses_simpleaudit_params_api(self):
+        # Guard against regression: the engine must use SimpleAudit 0.1.13+
+        # params/target_params/judge_params/auditor_params for per-request
+        # generation params, not the old denylist approach.
         from core import engine
 
         src = inspect.getsource(engine.build_model_auditor)
-        self.assertIn("_CONSTRUCTOR_DENYLIST", src)
-        self.assertIn("temperature", src)  # temperature is in the denylist
-        self.assertNotIn('kw["temperature"]', src)
+        self.assertIn("target_params", src)
+        self.assertIn("judge_params", src)
+        self.assertIn("auditor_params", src)
+        self.assertNotIn("_CONSTRUCTOR_DENYLIST", src)
 
 
 class ProviderNormalizationTest(TestCase):

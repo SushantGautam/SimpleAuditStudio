@@ -170,30 +170,36 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
     probe_prompt = gen.get("probe_prompt") or None
     judge_prompt = gen.get("judge_prompt") or None
 
-    # The engine forwards target/auditor/judge kwargs to the provider client
-    # CONSTRUCTOR (e.g. AsyncOpenAI.__init__). Per-request generation params
-    # (temperature, top_p, max_tokens, etc.) are NOT valid constructor args and
-    # would crash. We use a denylist of known per-request-only params to filter
-    # them out, while passing through anything else (timeout, max_retries,
-    # default_headers, organization, base_url overrides, etc.).
-    _CONSTRUCTOR_DENYLIST = {
-        "temperature", "top_p", "max_tokens", "frequency_penalty",
-        "presence_penalty", "stop", "seed", "logprobs", "top_logprobs",
-        "n", "logit_bias", "user", "response_format", "tools",
-        "tool_choice", "functions", "function_call",
-    }
+    # SimpleAudit 0.1.13+ supports per-request generation params via
+    # params / target_params / judge_params / auditor_params. These are
+    # merged and passed directly into the LLM API call kwargs (temperature,
+    # top_p, max_tokens, etc.). Constructor kwargs (timeout, headers, etc.)
+    # still go through target_kwargs / auditor_kwargs / judge_kwargs.
+    #
+    # The generation config override JSON uses this structure:
+    #   {"params": {...}, "target_params": {...}, "judge_params": {...},
+    #    "auditor_params": {...}, "target_kwargs": {...}, ...}
+    #
+    # Keys under *_params → per-request generation params (any provider key)
+    # Keys under *_kwargs → client constructor kwargs (timeout, headers, etc.)
 
     def _role_kwargs(cfg: dict[str, Any], gen_override: dict | None = None) -> dict[str, Any] | None:
+        """Merge endpoint-level kwargs with generation-config constructor overrides."""
         raw = dict(cfg.get("kwargs") or {})
         if gen_override:
             raw.update(gen_override)
-        filtered = {k: v for k, v in raw.items() if k not in _CONSTRUCTOR_DENYLIST}
-        return filtered or None
+        return raw or None
 
-    # Extract per-role kwargs overrides from generation config
-    target_gen_kwargs = gen.get("target_kwargs") or None
-    auditor_gen_kwargs = gen.get("auditor_kwargs") or None
-    judge_gen_kwargs = gen.get("judge_kwargs") or None
+    # Per-request generation params (SimpleAudit 0.1.13+)
+    gen_params = gen.get("params") or None
+    gen_target_params = gen.get("target_params") or None
+    gen_judge_params = gen.get("judge_params") or None
+    gen_auditor_params = gen.get("auditor_params") or None
+
+    # Constructor kwargs overrides
+    target_ctor_kwargs = gen.get("target_kwargs") or None
+    auditor_ctor_kwargs = gen.get("auditor_kwargs") or None
+    judge_ctor_kwargs = gen.get("judge_kwargs") or None
 
     try:
         instance = ModelAuditor(
@@ -201,17 +207,21 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
             provider=target_cfg["provider"],
             base_url=target_cfg["base_url"],
             api_key=target_cfg["api_key"],
-            target_kwargs=_role_kwargs(target_cfg, target_gen_kwargs),
+            target_kwargs=_role_kwargs(target_cfg, target_ctor_kwargs),
             auditor_model=auditor_cfg["model"],
             auditor_provider=auditor_cfg["provider"],
             auditor_base_url=auditor_cfg["base_url"],
             auditor_api_key=auditor_cfg["api_key"],
-            auditor_kwargs=_role_kwargs(auditor_cfg, auditor_gen_kwargs),
+            auditor_kwargs=_role_kwargs(auditor_cfg, auditor_ctor_kwargs),
             judge_model=judge_cfg["model"],
             judge_provider=judge_cfg["provider"],
             judge_base_url=judge_cfg["base_url"],
             judge_api_key=judge_cfg["api_key"],
-            judge_kwargs=_role_kwargs(judge_cfg, judge_gen_kwargs),
+            judge_kwargs=_role_kwargs(judge_cfg, judge_ctor_kwargs),
+            params=gen_params,
+            target_params=gen_target_params,
+            judge_params=gen_judge_params,
+            auditor_params=gen_auditor_params,
             max_turns=max_turns,
             max_retries=max_retries,
             retry_backoff=retry_backoff,
