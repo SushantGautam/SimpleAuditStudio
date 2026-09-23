@@ -144,13 +144,13 @@
   <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
     <h2 class="text-sm font-semibold text-gray-300 mb-3">Frozen Manifest</h2>
     <div class="space-y-1.5 text-xs">
-      <div class="flex justify-between"><span class="text-gray-500">Scenario Set</span><span class="text-gray-300">{{ run.scenario_set_version.scenario_set.name }} v{{ run.scenario_set_version.version_number }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Content Hash</span><span class="text-gray-400 font-mono truncate max-w-[140px]">{{ run.scenario_set_version.content_hash|truncatechars:16 }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Target</span><span class="text-gray-300">{{ run.target_endpoint.name|default:"—" }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Auditor</span><span class="text-gray-300">{{ run.auditor_endpoint.name|default:"—" }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Judge</span><span class="text-gray-300">{{ run.judge_endpoint.name|default:"—" }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Engine</span><span class="text-gray-300">{{ run.simpleaudit_version|default:"—" }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-500">Git Commit</span><span class="text-gray-400 font-mono">{{ run.git_commit|truncatechars:8|default:"—" }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Scenario Set</span><span class="text-gray-300 text-right break-all">{{ run.scenario_set_version.scenario_set.name }} v{{ run.scenario_set_version.version }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Content Hash</span><span class="text-gray-400 font-mono truncate max-w-[140px]">{{ run.scenario_set_version.content_hash|truncatechars:16 }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Target</span><span class="text-gray-300 text-right break-all">{{ run.target_endpoint.name|default:"—" }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Auditor</span><span class="text-gray-300 text-right break-all">{{ run.auditor_endpoint.name|default:"—" }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Judge</span><span class="text-gray-300 text-right break-all">{{ run.judge_endpoint.name|default:"—" }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Engine</span><span class="text-gray-300">{{ run.simpleaudit_version|default:"—" }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Git Commit</span><span class="text-gray-400 font-mono">{{ run.git_commit|truncatechars:8|default:"—" }}</span></div>
     </div>
   </div>
 </div>

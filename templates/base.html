@@ -70,17 +70,28 @@
   const btn = document.getElementById('sidebar-toggle');
   const sidebar = document.getElementById('sidebar');
   if (!btn || !sidebar) return;
-  let collapsed = localStorage.getItem('sa-sidebar-collapsed') === '1';
+  const isMobile = window.innerWidth < 768;
+  let collapsed = isMobile ? true : (localStorage.getItem('sa-sidebar-collapsed') === '1');
   function apply() {
     sidebar.style.width = collapsed ? '3.5rem' : '13rem';
     btn.textContent = collapsed ? '\u27E9' : '\u27E8';
     document.querySelectorAll('.sidebar-label').forEach(el => el.classList.toggle('hidden', collapsed));
   }
-  if (collapsed) apply();
+  apply();
   btn.addEventListener('click', () => {
     collapsed = !collapsed;
-    localStorage.setItem('sa-sidebar-collapsed', collapsed ? '1' : '0');
+    if (!isMobile) localStorage.setItem('sa-sidebar-collapsed', collapsed ? '1' : '0');
     apply();
+  });
+  // Auto-collapse/expand on resize across breakpoint
+  let wasMobile = isMobile;
+  window.addEventListener('resize', () => {
+    const nowMobile = window.innerWidth < 768;
+    if (nowMobile !== wasMobile) {
+      wasMobile = nowMobile;
+      collapsed = nowMobile;
+      apply();
+    }
   });
 })();
 </script>

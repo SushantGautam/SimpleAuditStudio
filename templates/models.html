@@ -11,7 +11,8 @@
 <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-6">
   <h2 class="text-sm font-semibold text-gray-300 mb-3">Endpoints</h2>
   {% if endpoints %}
-  <table class="w-full text-sm mb-4">
+  <div class="overflow-x-auto -mx-4 px-4">
+  <table class="w-full text-sm mb-4 min-w-[500px]">
     <thead><tr class="border-b border-gray-800">
       <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Name</th>
       <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">URL</th>
@@ -21,9 +22,9 @@
     <tbody>
       {% for ep in endpoints %}
       <tr class="border-b border-gray-800/50">
-        <td class="px-3 py-2.5 font-medium text-gray-200">{{ ep.display_name }}</td>
-        <td class="px-3 py-2.5 text-gray-500 text-xs truncate max-w-[200px]">{{ ep.base_url }}</td>
-        <td class="px-3 py-2.5 text-gray-400 text-xs">{{ ep.model_id|default:"—" }}</td>
+        <td class="px-3 py-2.5 font-medium text-gray-200 whitespace-nowrap">{{ ep.display_name }}</td>
+        <td class="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">{{ ep.base_url }}</td>
+        <td class="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">{{ ep.model_id|default:"—" }}</td>
         <td class="px-3 py-2.5">
           <form method="post" action="{% url 'model_delete' ep.id %}" onsubmit="return confirm('Delete?')">
             {% csrf_token %}
@@ -34,6 +35,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="text-sm text-gray-500 mb-4">No endpoints registered.</p>
   {% endif %}

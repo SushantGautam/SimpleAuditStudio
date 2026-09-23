@@ -9,7 +9,8 @@
     <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-4">
       <h2 class="text-sm font-semibold text-gray-300 mb-3">Active ({{ active|length }})</h2>
       {% if active %}
-      <table class="w-full text-sm">
+      <div class="overflow-x-auto -mx-4 px-4">
+      <table class="w-full text-sm min-w-[480px]">
         <thead><tr class="border-b border-gray-800">
           <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">ID</th>
           <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Set</th>
@@ -36,6 +37,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% else %}
       <p class="text-sm text-gray-500 py-4 text-center">No active audits</p>
       {% endif %}
@@ -45,7 +47,8 @@
     <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
       <h2 class="text-sm font-semibold text-gray-300 mb-3">Finished ({{ finished|length }})</h2>
       {% if finished %}
-      <table class="w-full text-sm">
+      <div class="overflow-x-auto -mx-4 px-4">
+      <table class="w-full text-sm min-w-[480px]">
         <thead><tr class="border-b border-gray-800">
           <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">ID</th>
           <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Set</th>
@@ -67,6 +70,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% else %}
       <p class="text-sm text-gray-500 py-4 text-center">No finished runs</p>
       {% endif %}
