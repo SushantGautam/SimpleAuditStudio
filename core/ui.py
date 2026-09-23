@@ -317,6 +317,7 @@ class ModelsView(ProjectMixin, TemplateView):
                     model_id=request.POST.get("model_id", "").strip(),
                     provider=request.POST.get("provider", "openai"),
                     secret_reference=request.POST.get("secret_reference", "").strip() or None,
+                    api_key_direct=request.POST.get("api_key_direct", "").strip(),
                     enabled=True,
                     created_by=request.user,
                 )
@@ -330,6 +331,7 @@ class ModelsView(ProjectMixin, TemplateView):
                 ep.model_id = request.POST.get("model_id", ep.model_id).strip()
                 ep.provider = request.POST.get("provider", ep.provider)
                 ep.secret_reference = request.POST.get("secret_reference", "").strip() or None
+                ep.api_key_direct = request.POST.get("api_key_direct", "").strip()
                 ep.enabled = request.POST.get("enabled") == "1"
                 ep.save()
         elif action == "edit_profile":

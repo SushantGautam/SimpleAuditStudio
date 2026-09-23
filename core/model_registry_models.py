@@ -17,6 +17,7 @@ class ModelEndpoint(models.Model):
     capabilities = models.JSONField(default=dict, blank=True)
     default_parameters = models.JSONField(default=dict, blank=True)
     secret_reference = models.CharField(max_length=250, blank=True)
+    api_key_direct = models.CharField(max_length=500, blank=True, default="")
     enabled = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

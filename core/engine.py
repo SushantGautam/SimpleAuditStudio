@@ -53,8 +53,11 @@ def _ensure_engine_on_path() -> None:
         sys.path.insert(0, engine_path)
 
 
-def _resolve_secret(secret_reference: str | None) -> str | None:
-    """Resolve an env-style secret reference to its value (or None if unset)."""
+def _resolve_secret(secret_reference: str | None, api_key_direct: str | None = None) -> str | None:
+    """Resolve credentials: direct key takes priority, then env var reference."""
+    direct = (api_key_direct or "").strip()
+    if direct:
+        return direct
     ref = (secret_reference or "").strip()
     if not ref:
         return None
@@ -71,7 +74,10 @@ def _validate_secrets(*snapshots: tuple[str, dict]) -> None:
     ``secret_reference`` (e.g. a local server needing no auth) is allowed.
     """
     for role, snap in snapshots:
+        direct = (snap.get("api_key_direct") or "").strip()
         ref = (snap.get("secret_reference") or "").strip()
+        if direct:
+            continue  # direct key present, no need to validate env var
         if not ref:
             continue
         if _resolve_secret(ref) is None:
@@ -116,7 +122,7 @@ def _auditor_kwargs_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """
     params = dict(snapshot.get("default_parameters") or {})
     base_url = snapshot.get("base_url") or None
-    api_key = _resolve_secret(snapshot.get("secret_reference"))
+    api_key = _resolve_secret(snapshot.get("secret_reference"), snapshot.get("api_key_direct"))
     # any_llm's OpenAI-compatible client requires *some* API key even when the
     # endpoint needs no auth (self-hosted / local servers). A snapshot without a
     # secret_reference means "no auth", so supply a non-secret placeholder — the

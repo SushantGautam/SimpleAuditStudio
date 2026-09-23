@@ -27,6 +27,7 @@ def _endpoint_snapshot(endpoint: ModelEndpoint) -> dict:
         "capabilities": endpoint.capabilities,
         "default_parameters": endpoint.default_parameters,
         "secret_reference": endpoint.secret_reference,
+        "api_key_direct": endpoint.api_key_direct,
         "enabled": endpoint.enabled,
     }
 
