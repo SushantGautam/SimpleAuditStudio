@@ -213,3 +213,35 @@ def stream_audit_run_events(request, project_id, run_id):
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compare_audit_runs(request, project_id):
+    """Compare multiple audit runs by ID (comma-separated ``?run_ids=1,2,3``).
+
+    Returns intersection-based results with compatibility warnings. Does not
+    silently compare incompatible experiments — warnings are always surfaced.
+    """
+    from .comparison import ComparisonIncompatible, compare_runs
+
+    project = _get_project_or_404(project_id)
+    _require_project_access(request.user, project)
+
+    raw_ids = request.query_params.get("run_ids", "")
+    try:
+        run_ids = [int(x.strip()) for x in raw_ids.split(",") if x.strip()]
+    except ValueError:
+        raise StableAPIError(detail="run_ids must be comma-separated integers.", code="bad_request", http_status=400)
+
+    if len(run_ids) < 2:
+        raise StableAPIError(detail="Provide at least 2 run IDs to compare.", code="bad_request", http_status=400)
+    if len(run_ids) > 10:
+        raise StableAPIError(detail="Compare at most 10 runs at a time.", code="bad_request", http_status=400)
+
+    try:
+        result = compare_runs(project, run_ids)
+    except ComparisonIncompatible as exc:
+        raise StableAPIError(detail="; ".join(exc.reasons), code="incompatible_runs", http_status=409) from exc
+
+    return Response(result)

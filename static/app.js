@@ -237,7 +237,15 @@ VIEWS.dashboard = async (root) => {
       stat(total, "Total audits"), stat(completed, "Completed"), stat(running, "In progress"), stat(failed, "Failed"));
     card.append(stats);
     if (!runs.length) {
-      card.append(el("div", { class: "empty" }, "No audits yet. Create one from “New Audit”."));
+      card.append(el("div", { class: "empty" },
+        el("p", {}, "Welcome! No audits yet."),
+        el("p", {}, "To run your first audit:"),
+        el("ol", { style: "margin-left:20px;line-height:1.8" },
+          el("li", {}, "Add a model in the Models tab."),
+          el("li", {}, "Create scenarios and publish a set version in Scenarios."),
+          el("li", {}, "Click New Audit to pick models + scenarios and submit."),
+        ),
+      ));
       return;
     }
     const table = el("table");

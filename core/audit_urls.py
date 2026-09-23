@@ -21,4 +21,9 @@ urlpatterns = [
         audit_views.stream_audit_run_events,
         name="audit-run-events",
     ),
+    path(
+        "projects/<int:project_id>/audit-runs/compare/",
+        audit_views.compare_audit_runs,
+        name="audit-run-compare",
+    ),
 ]
