@@ -338,12 +338,29 @@ class CompareView(ProjectMixin, TemplateView):
 
     def get_context_data(self, **kw):
         kw["runs"] = AuditRun.objects.filter(project=self.request.project, status="completed").order_by("-created_at")[:20]
-        kw["result"] = None
+        kw.setdefault("result", None)
         return super().get_context_data(**kw)
 
     def post(self, request, *args, **kwargs):
         ids = [int(x) for x in request.POST.getlist("runs[]") if x.isdigit()]
-        result = compare_runs(request.project, ids) if len(ids) >= 2 else None
+        raw = compare_runs(request.project, ids) if len(ids) >= 2 else None
+        # Reshape for template
+        result = None
+        if raw:
+            columns = [f"#{r['id']} ({r['target'] or '?'})" for r in raw["runs"]]
+            rows = []
+            for entry in raw["results"]:
+                values = []
+                for col_run_id in [str(r["id"]) for r in raw["runs"]]:
+                    rdata = entry["runs"].get(col_run_id, {})
+                    values.append(rdata.get("severity") or rdata.get("status") or "—")
+                rows.append({"scenario": entry["scenario_key"], "values": values})
+            result = {
+                "warnings": raw["warnings"],
+                "columns": columns,
+                "rows": rows,
+                "intersection_count": raw["intersection_count"],
+            }
         return self.render_to_response(self.get_context_data(result=result))
 
 
