@@ -173,6 +173,23 @@ MAX_CONCURRENT_AUDITS = int(os.environ.get("MAX_CONCURRENT_AUDITS", "2"))
 MAX_SCENARIOS_PER_RUN = int(os.environ.get("MAX_SCENARIOS_PER_RUN", "500"))
 SSE_MAX_CONNECTIONS_PER_USER = int(os.environ.get("SSE_MAX_CONNECTIONS_PER_USER", "10"))
 
+# --- Sentry error tracking & tracing ---
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        send_default_pii=True,
+        enable_logs=True,
+        traces_sample_rate=1.0 if DEBUG else 0.1,
+        profile_session_sample_rate=1.0 if DEBUG else 0.1,
+        profile_lifecycle="trace",
+        environment=os.environ.get("SENTRY_ENVIRONMENT", "development" if DEBUG else "production"),
+    )
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

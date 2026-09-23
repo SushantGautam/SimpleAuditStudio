@@ -9,6 +9,7 @@ requests==2.32.5
 gunicorn==23.0.0
 hatchet-sdk==1.41.0
 pydantic>=2.7,<3
+sentry-sdk[django]>=2.0
 
 # --- SimpleAudit engine (Target -> Auditor -> Judge) ---
 # The engine itself is vendored via SIMPLEAUDIT_ENGINE_PATH (a git checkout of
