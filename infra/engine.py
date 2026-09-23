@@ -114,13 +114,42 @@ def _normalize_provider(provider: str | None, base_url: str | None) -> str:
     return p or "openai"
 
 
+# Generation params that belong in per-request params (NOT client constructor)
+_GENERATION_PARAM_KEYS = {
+    "temperature", "top_p", "top_k", "max_tokens", "max_completion_tokens",
+    "frequency_penalty", "presence_penalty", "stop", "seed", "logprobs",
+    "n", "response_format", "tools", "tool_choice", "functions",
+}
+
+
+def _split_endpoint_params(params: dict[str, Any]) -> tuple[dict | None, dict | None]:
+    """Split endpoint default_parameters into (generation_params, client_kwargs).
+
+    Generation params (temperature, top_p, etc.) go per-request via ModelAuditor's
+    ``params``/``target_params``. Client constructor params (timeout, headers, etc.)
+    go via ``kwargs``/``target_kwargs``.
+    """
+    gen_params: dict[str, Any] = {}
+    client_kwargs: dict[str, Any] = {}
+    for k, v in params.items():
+        if k in _GENERATION_PARAM_KEYS:
+            gen_params[k] = v
+        else:
+            client_kwargs[k] = v
+    return (gen_params or None), (client_kwargs or None)
+
+
 def _auditor_kwargs_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Map a frozen endpoint snapshot onto ModelAuditor constructor kwargs.
 
     Only the fields relevant to a given role are used; the caller picks which
     snapshot feeds target vs auditor vs judge.
+
+    Returns a dict with keys: model, provider, base_url, api_key, kwargs
+    (client constructor), gen_params (per-request generation params).
     """
-    params = dict(snapshot.get("default_parameters") or {})
+    raw_params = dict(snapshot.get("default_parameters") or {})
+    gen_params, client_kwargs = _split_endpoint_params(raw_params)
     base_url = snapshot.get("base_url") or None
     api_key = _resolve_secret(snapshot.get("secret_reference"), snapshot.get("api_key_direct"))
     # any_llm's OpenAI-compatible client requires *some* API key even when the
@@ -134,7 +163,8 @@ def _auditor_kwargs_from_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "provider": _normalize_provider(snapshot.get("provider"), base_url),
         "base_url": base_url,
         "api_key": api_key,
-        "kwargs": params or None,
+        "kwargs": client_kwargs,
+        "gen_params": gen_params,
     }
 
 
@@ -190,11 +220,20 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
             raw.update(gen_override)
         return raw or None
 
-    # Per-request generation params (SimpleAudit 0.1.13+)
-    gen_params = gen.get("params") or None
-    gen_target_params = gen.get("target_params") or None
-    gen_judge_params = gen.get("judge_params") or None
-    gen_auditor_params = gen.get("auditor_params") or None
+    # Per-request generation params: merge endpoint-level gen_params with
+    # the audit profile's generation config overrides.
+    def _merge_gen_params(endpoint_gen: dict | None, profile_gen: dict | None) -> dict | None:
+        merged = {}
+        if endpoint_gen:
+            merged.update(endpoint_gen)
+        if profile_gen:
+            merged.update(profile_gen)
+        return merged or None
+
+    gen_params = _merge_gen_params(target_cfg.get("gen_params"), gen.get("params"))
+    gen_target_params = _merge_gen_params(target_cfg.get("gen_params"), gen.get("target_params"))
+    gen_judge_params = _merge_gen_params(judge_cfg.get("gen_params"), gen.get("judge_params"))
+    gen_auditor_params = _merge_gen_params(auditor_cfg.get("gen_params"), gen.get("auditor_params"))
 
     # Constructor kwargs overrides
     target_ctor_kwargs = gen.get("target_kwargs") or None
@@ -355,10 +394,19 @@ def run_scenario_repeated(
     probe_prompt = gen.get("probe_prompt") or None
     judge_prompt = gen.get("judge_prompt") or None
 
-    gen_params = gen.get("params") or None
-    gen_target_params = gen.get("target_params") or None
-    gen_judge_params = gen.get("judge_params") or None
-    gen_auditor_params = gen.get("auditor_params") or None
+    # Merge endpoint-level gen_params with profile-level overrides
+    def _merge_gen(endpoint_gen: dict | None, profile_gen: dict | None) -> dict | None:
+        merged = {}
+        if endpoint_gen:
+            merged.update(endpoint_gen)
+        if profile_gen:
+            merged.update(profile_gen)
+        return merged or None
+
+    gen_params = _merge_gen(target_cfg.get("gen_params"), gen.get("params"))
+    gen_target_params = _merge_gen(target_cfg.get("gen_params"), gen.get("target_params"))
+    gen_judge_params = _merge_gen(judge_cfg.get("gen_params"), gen.get("judge_params"))
+    gen_auditor_params = _merge_gen(auditor_cfg.get("gen_params"), gen.get("auditor_params"))
 
     def _role_kwargs(cfg: dict[str, Any], gen_override: dict | None = None) -> dict[str, Any] | None:
         raw = dict(cfg.get("kwargs") or {})
@@ -402,6 +450,10 @@ def run_scenario_repeated(
     # (one per rep). For single-scenario execution it always contains exactly
     # one AuditResult. We extract that single result for the platform's
     # per-rep storage format.
+    #
+    # IMPORTANT: The outer on_rep_done (from the worker) may do Django ORM
+    # calls, which CANNOT run inside asyncio.run()'s event loop. So we collect
+    # results here and emit events AFTER asyncio.run() returns.
     reps: list[dict[str, Any]] = []
 
     def _on_rep_done(label: str, rep_index: int, total: int, result) -> None:
@@ -414,8 +466,18 @@ def run_scenario_repeated(
         payload = single.to_dict()
         payload["_rep_index"] = rep_index
         reps.append(payload)
-        if on_rep_done:
-            on_rep_done(rep_index, payload)
+        # Do NOT call on_rep_done here — it may hit the DB from an async context.
+        # Events are emitted after asyncio.run() completes (see below).
+
+    # Constructor kwargs for judge/auditor clients go in the model entry dict
+    # because AuditExperiment.__init__ doesn't accept them directly — they flow
+    # through _merge_common → ModelAuditor(**merged).
+    judge_kw = _role_kwargs(auditor_cfg, judge_ctor_kwargs)
+    if judge_kw:
+        model_entry["judge_kwargs"] = judge_kw
+    auditor_kw = _role_kwargs(auditor_cfg, auditor_ctor_kwargs)
+    if auditor_kw:
+        model_entry["auditor_kwargs"] = auditor_kw
 
     try:
         experiment = AuditExperiment(
@@ -424,12 +486,10 @@ def run_scenario_repeated(
             judge_provider=auditor_cfg["provider"],
             judge_base_url=auditor_cfg["base_url"],
             judge_api_key=auditor_cfg["api_key"],
-            judge_kwargs=_role_kwargs(auditor_cfg, judge_ctor_kwargs),
             auditor_model=auditor_cfg["model"],
             auditor_provider=auditor_cfg["provider"],
             auditor_base_url=auditor_cfg["base_url"],
             auditor_api_key=auditor_cfg["api_key"],
-            auditor_kwargs=_role_kwargs(auditor_cfg, auditor_ctor_kwargs),
             probe_prompt=probe_prompt,
             judge_prompt=judge_prompt,
             json_format=True,
@@ -464,6 +524,11 @@ def run_scenario_repeated(
             payload = r.to_dict()
             payload["_rep_index"] = i
             reps.append(payload)
+
+    # Emit progress events NOW (safe: we're back in sync context).
+    if on_rep_done:
+        for rep in reps:
+            on_rep_done(rep.get("_rep_index", 0), rep)
 
     # --- Aggregate stability stats ---
     severities = [r.get("severity", "") for r in reps]
