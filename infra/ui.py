@@ -215,7 +215,8 @@ class ScenariosView(ProjectMixin, TemplateView):
                     # For the latest version, hide archived scenarios (they're still in historical versions)
                     if viewing_version == versions[0]:
                         items = [i for i in items if i.scenario.archived_at is None]
-        kw.update(sets=sets, selected=selected, items=items, versions=versions, viewing_version=viewing_version)
+        prev_version = (viewing_version.version - 1) if viewing_version and viewing_version.version > 1 else None
+        kw.update(sets=sets, selected=selected, items=items, versions=versions, viewing_version=viewing_version, prev_version=prev_version)
         return super().get_context_data(**kw)
 
 
@@ -376,6 +377,61 @@ class ScenarioDeleteView(ProjectMixin, View):
 
 class ScenarioRevertView(ProjectMixin, View):
     """Revert a scenario set to an old version by publishing it as a new version."""
+
+    def get(self, request, set_id):
+        """Return diff between current latest and target version."""
+        sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+        if not sset:
+            return JsonResponse({"error": "Not found"}, status=404)
+        target_ver = int(request.GET.get("target_version", 0))
+        target_version = sset.versions.filter(version=target_ver).first()
+        latest_version = sset.versions.order_by("-version").first()
+        if not target_version or not latest_version:
+            return JsonResponse({"error": "Version not found"}, status=404)
+
+        # Build maps: scenario_key -> {title, description, expected_behavior}
+        def _snap(ver):
+            m = {}
+            for it in ver.items.select_related("scenario", "revision"):
+                m[it.scenario.key] = {
+                    "title": it.scenario.title,
+                    "description": it.revision.description,
+                    "expected_behavior": it.revision.expected_behavior or [],
+                }
+            return m
+
+        latest_map = _snap(latest_version)
+        target_map = _snap(target_version)
+
+        added = []      # in target but not in latest
+        removed = []    # in latest but not in target
+        changed = []    # in both but content differs
+        unchanged = []  # in both, same content
+
+        all_keys = set(latest_map.keys()) | set(target_map.keys())
+        for key in sorted(all_keys):
+            in_latest = key in latest_map
+            in_target = key in target_map
+            if in_target and not in_latest:
+                added.append({"key": key, **target_map[key]})
+            elif in_latest and not in_target:
+                removed.append({"key": key, **latest_map[key]})
+            else:
+                l, t = latest_map[key], target_map[key]
+                if l["description"] != t["description"] or l["expected_behavior"] != t["expected_behavior"]:
+                    changed.append({"key": key, "title": t["title"],
+                                    "latest_desc": l["description"], "target_desc": t["description"],
+                                    "latest_eb": l["expected_behavior"], "target_eb": t["expected_behavior"]})
+                else:
+                    unchanged.append({"key": key, "title": t["title"]})
+
+        return JsonResponse({
+            "target_version": target_ver,
+            "latest_version": latest_version.version,
+            "added": added, "removed": removed, "changed": changed,
+            "unchanged_count": len(unchanged),
+        })
+
     def post(self, request, set_id):
         sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
         if not sset:
@@ -392,6 +448,63 @@ class ScenarioRevertView(ProjectMixin, View):
         else:
             messages.error(request, "Version not found.")
         return redirect(f"/scenarios/?set={set_id}")
+
+
+class ScenarioDiffView(ProjectMixin, View):
+    """Return diff between any two versions of a scenario set."""
+
+    def get(self, request, set_id):
+        sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+        if not sset:
+            return JsonResponse({"error": "Not found"}, status=404)
+        from_ver = int(request.GET.get("from", 0))
+        to_ver = int(request.GET.get("to", 0))
+        ver_from = sset.versions.filter(version=from_ver).first()
+        ver_to = sset.versions.filter(version=to_ver).first()
+        if not ver_from or not ver_to:
+            return JsonResponse({"error": "Version not found"}, status=404)
+
+        def _snap(ver):
+            m = {}
+            for it in ver.items.select_related("scenario", "revision"):
+                m[it.scenario.key] = {
+                    "title": it.scenario.title,
+                    "description": it.revision.description,
+                    "expected_behavior": it.revision.expected_behavior or [],
+                }
+            return m
+
+        from_map = _snap(ver_from)
+        to_map = _snap(ver_to)
+
+        added = []    # in 'to' but not in 'from'
+        removed = []  # in 'from' but not in 'to'
+        changed = []  # in both but content differs
+        unchanged_count = 0
+
+        all_keys = set(from_map.keys()) | set(to_map.keys())
+        for key in sorted(all_keys):
+            in_from = key in from_map
+            in_to = key in to_map
+            if in_to and not in_from:
+                added.append({"key": key, **to_map[key]})
+            elif in_from and not in_to:
+                removed.append({"key": key, **from_map[key]})
+            else:
+                f, t = from_map[key], to_map[key]
+                if f["description"] != t["description"] or f["expected_behavior"] != t["expected_behavior"]:
+                    changed.append({"key": key, "title": t["title"],
+                                    "from_desc": f["description"], "to_desc": t["description"],
+                                    "from_eb": f["expected_behavior"], "to_eb": t["expected_behavior"]})
+                else:
+                    unchanged_count += 1
+
+        return JsonResponse({
+            "from_version": from_ver,
+            "to_version": to_ver,
+            "added": added, "removed": removed, "changed": changed,
+            "unchanged_count": unchanged_count,
+        })
 
 
 class ScenarioExportView(ProjectMixin, View):
