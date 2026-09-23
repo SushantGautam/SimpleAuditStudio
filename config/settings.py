@@ -40,6 +40,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "core.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -169,6 +170,11 @@ SSE_MAX_CONNECTIONS_PER_USER = int(os.environ.get("SSE_MAX_CONNECTIONS_PER_USER"
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "correlation": {
+            "()": "core.middleware.CorrelationLogFilter",
+        },
+    },
     "formatters": {
         "json": {
             "()": "core.logging.JsonFormatter",
@@ -178,6 +184,7 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
+            "filters": ["correlation"],
         }
     },
     "root": {
