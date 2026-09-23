@@ -753,45 +753,40 @@ VIEWS.compare = async (root) => {
     outCard.classList.remove("hidden");
     outCard.innerHTML = `<h2>Comparison</h2><div class="muted">Computing…</div>`;
     try {
-      // Fetch each run's results and align by scenario key.
-      const data = await Promise.all(ids.map(async (id) => {
-        const run = await get(`${P()}/audit-runs/${id}/`);
-        const results = await get(`${P()}/audit-runs/${id}/results/`);
-        return { run, results };
-      }));
+      const cmp = await get(`${P()}/audit-runs/compare/?run_ids=${ids.join(",")}`);
       outCard.innerHTML = `<h2>Comparison</h2>`;
-      // Compatibility warnings.
-      const hashes = new Set(data.map((d) => d.run.scenario_set_version_hash));
-      const versions = new Set(data.map((d) => d.run.scenario_set_version_number));
-      const judges = new Set(data.map((d) => (d.run.judge_config_snapshot || {}).model_id));
-      const warns = [];
-      if (hashes.size > 1) warns.push("⚠️ Scenario set versions differ across these runs — results may not be directly comparable.");
-      if (judges.size > 1) warns.push("⚠️ Different judge models were used. Judge choice strongly affects verdicts (see judge-effects notes).");
-      for (const w of warns) outCard.append(el("div", { class: "warn" }, w));
-
-      // Build union of scenario keys.
-      const byKey = data.map((d) => {
-        const m = {};
-        for (const r of d.results) { const k = (r.result && r.result.scenario_name) || r.scenario_key || String(r.version_item_id); m[k] = r; }
-        return m;
-      });
-      const keys = [...new Set(data.flatMap((d) => Object.keys(byKey[data.indexOf(d)])))];
+      // Run summaries.
+      const sumRow = el("div", { class: "stats" });
+      for (const r of cmp.runs) {
+        sumRow.append(el("div", { class: "stat" },
+          el("div", { class: "num" }, `${r.successful_scenarios}/${r.total_scenarios}`),
+          el("div", { class: "lbl" }, `${r.name} #${r.id}<br>${r.target || ""} · ${r.judge || ""}`)));
+      }
+      outCard.append(sumRow);
+      // Warnings.
+      for (const w of cmp.warnings) outCard.append(el("div", { class: "warn" }, "⚠️ " + w));
+      if (!cmp.compatible) outCard.append(el("div", { class: "muted", style: "margin-top:6px" }, "These runs have different inputs. The table below shows only scenarios present in ALL selected runs."));
+      // Intersection table.
+      if (!cmp.results.length) {
+        outCard.append(el("div", { class: "empty" }, "No common scenarios found across the selected runs."));
+        return;
+      }
       const table = el("table", { class: "compare-table" });
-      table.append(el("thead", {}, el("tr", {}, th("Scenario"), ...data.map((d) => th(`${d.run.name} #${d.run.id}`)))));
+      table.append(el("thead", {}, el("tr", {}, th("Scenario"), ...cmp.runs.map((r) => th(`${r.name} #${r.id}`)))));
       const tb = el("tbody");
-      for (const k of keys) {
-        const cells = [el("td", {}, esc(k))];
-        let present = 0;
-        data.forEach((d, i) => {
-          const r = byKey[i][k];
-          if (r) { present++; const sev = (r.result && r.result.severity) || r.status; cells.push(el("td", { html: `<span class="${sevClass(sev)}" style="font-weight:700">${esc(sev)}</span>` })); }
+      for (const row of cmp.results) {
+        const cells = [el("td", {}, esc(row.scenario_key))];
+        for (const r of cmp.runs) {
+          const d = row.runs[String(r.id)];
+          if (d && d.severity) cells.push(el("td", { html: `<span class="${sevClass(d.severity)}" style="font-weight:700">${esc(d.severity)}</span>` }));
+          else if (d && d.status === "failed") cells.push(el("td", { class: "muted" }, "failed"));
           else cells.push(el("td", { class: "muted" }, "—"));
-        });
+        }
         tb.append(el("tr", {}, ...cells));
       }
       table.append(tb);
       outCard.append(table);
-      if (hashes.size > 1) outCard.append(el("div", { class: "muted", style: "margin-top:10px" }, "Tip: for a clean comparison, run all audits against the same scenario-set version."));
+      outCard.append(el("div", { class: "muted", style: "margin-top:10px" }, `Showing ${cmp.intersection_count} scenario(s) present in all ${cmp.runs.length} runs.`));
     } catch (err) { outCard.innerHTML = `<h2>Comparison</h2><div class="error-banner">${esc(err.message)}</div>`; }
   }
 };
