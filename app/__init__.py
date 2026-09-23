@@ -1,0 +1,1 @@
+"""SimpleAudit Platform application package."""

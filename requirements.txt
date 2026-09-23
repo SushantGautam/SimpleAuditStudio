@@ -1,0 +1,20 @@
+Django==5.2.4
+djangorestframework==3.16.0
+django-cors-headers==4.7.0
+drf-spectacular==0.28.0
+psycopg[binary]==3.2.13
+python-dotenv==1.1.1
+boto3==1.40.4
+requests==2.32.5
+gunicorn==23.0.0
+hatchet-sdk==1.41.0
+pydantic>=2.7,<3
+
+# --- SimpleAudit engine (Target -> Auditor -> Judge) ---
+# The engine itself is vendored via SIMPLEAUDIT_ENGINE_PATH (a git checkout of
+# https://github.com/kelkalot/simpleaudit); these are its runtime dependencies,
+# required by the worker to execute real audits. The web process never imports
+# them (core.engine loads lazily), so a web-only deployment could omit this block.
+any-llm-sdk>=1.14.0
+fsspec>=2023.1.0
+tqdm>=4.66.0

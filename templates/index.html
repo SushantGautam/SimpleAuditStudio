@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SimpleAudit Platform</title>
+{% load static %}
+<link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}" />
+<link rel="stylesheet" href="{% static 'app.css' %}" />
+</head>
+<body>
+  <!-- Login / register screen -->
+  <div id="auth-screen" class="auth-wrap hidden">
+    <div class="auth-card card">
+      <div class="logo-big"></div>
+      <h1>SimpleAudit Platform</h1>
+      <p class="muted">Run and compare AI safety audits.</p>
+      <div class="tabs">
+        <button id="tab-login" class="tab active">Sign in</button>
+        <button id="tab-register" class="tab">Create account</button>
+      </div>
+      <label>Username</label>
+      <input id="auth-username" autocomplete="username" placeholder="your-name" />
+      <div id="auth-email-wrap" class="hidden">
+        <label>Email</label>
+        <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" />
+      </div>
+      <label>Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password" placeholder="••••••••" />
+      <div id="auth-error" class="warn hidden"></div>
+      <button id="auth-submit" class="primary">Sign in</button>
+    </div>
+  </div>
+
+  <!-- Main app shell -->
+  <div id="app" class="hidden">
+    <header>
+      <span class="logo"></span>
+      <h1>SimpleAudit</h1>
+      <nav id="nav">
+        <button data-view="dashboard" class="active">Dashboard</button>
+        <button data-view="new-audit">New Audit</button>
+        <button data-view="queue">Queue</button>
+        <button data-view="scenarios">Scenarios</button>
+        <button data-view="models">Models</button>
+        <button data-view="compare">Compare</button>
+      </nav>
+      <div class="userbox">
+        <select id="project-select" title="Project"></select>
+        <span id="whoami" class="muted"></span>
+        <button id="logout" class="btn">Sign out</button>
+      </div>
+    </header>
+    <main id="view-root"></main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="{% static 'app.js' %}"></script>
+</body>
+</html>

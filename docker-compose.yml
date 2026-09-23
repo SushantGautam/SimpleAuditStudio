@@ -1,0 +1,181 @@
+services:
+  postgres:
+    # Postgres 16 per ADR 002. Tag is overridable via POSTGRES_IMAGE for
+    # air-gapped hosts that have a specific tag pre-cached.
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-simpleaudit}
+      POSTGRES_USER: ${POSTGRES_USER:-simpleaudit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Creates the separate Hatchet queue database on first init (ADR 003).
+      # Only runs when the data volume is empty (fresh install).
+      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/10-hatchet-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simpleaudit} -d ${POSTGRES_DB:-simpleaudit}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Object storage for large audit artifacts (ADR 005). Optional profile so the
+  # core stack (postgres + hatchet + web + worker) can run on hosts that cannot
+  # pull MinIO; enable with `docker compose --profile storage up`. The audit
+  # execution path does not require it — only large-artifact persistence does.
+  minio:
+    profiles: ["storage"]
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # OpenAI-compatible mock model endpoint for end-to-end demos/tests without real
+  # API keys. NOT part of the production path. Enable with
+  # `docker compose --profile mock up`. Point a ModelEndpoint's base_url at
+  # http://mock-model:8901/v1 to run a full Target -> Auditor -> Judge audit
+  # through the live worker.
+  mock-model:
+    profiles: ["mock"]
+    build: .
+    command: python /app/deploy/mock_openai_server.py
+    environment:
+      PORT: "8901"
+    ports:
+      - "8901:8901"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8901/healthz',timeout=3)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Durable workflow engine (ADR 003 — accepted after Phase 4 spike passed 8/8).
+  # Postgres-backed task queue that coordinates audit execution. It is NOT the
+  # authoritative SimpleAudit database; PostgreSQL domain tables remain source of truth.
+  #
+  # The default image is hatchet-lite-dev (authentication compiled out) so a
+  # fresh `docker compose up` works turnkey: workers connect with the fixed
+  # worker token the dev image seeds into the DB (see HATCHET_API_KEY below,
+  # populated by the bootstrap_platform command on first start). For hardened
+  # deployments set HATCHET_IMAGE to the auth-enabled hatchet-lite and provide
+  # your own HATCHET_API_KEY.
+  hatchet-server:
+    image: ${HATCHET_IMAGE:-ghcr.io/hatchet-dev/hatchet/hatchet-lite-dev:latest}
+    environment:
+      # Full config per https://docs.hatchet.run/self-hosting/configuration-options
+      DATABASE_URL: postgresql://${POSTGRES_USER:-simpleaudit}:${POSTGRES_PASSWORD}@postgres:5432/${HATCHET_DB:-hatchet}?sslmode=disable
+      # Session store requires an explicit cookie domain.
+      SERVER_AUTH_COOKIE_DOMAIN: ${HATCHET_COOKIE_DOMAIN:-localhost}
+      SERVER_AUTH_COOKIE_INSECURE: "t"
+      SERVER_AUTH_SET_EMAIL_VERIFIED: "t"
+      # gRPC: workers connect over plaintext inside the compose network.
+      SERVER_GRPC_BIND_ADDRESS: "0.0.0.0"
+      SERVER_GRPC_INSECURE: "t"
+      SERVER_GRPC_BROADCAST_ADDRESS: hatchet-server:7077
+      SERVER_GRPC_PORT: "7077"
+      SERVER_HTTP_PORT: "8888"
+      SERVER_URL: http://hatchet-server:8888
+      SERVER_LOG_LEVEL: info
+      SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: hatchet-server:7077
+    ports:
+      - "8888:8888"   # Hatchet HTTP API / dashboard
+      - "7077:7077"   # gRPC (worker <-> server)
+    volumes:
+      # The auth-disabled dev image writes its fixed worker JWT here at startup.
+      # Mounted read-only into the worker so a fresh `docker compose up` works
+      # turnkey (see HATCHET_TOKEN_FILE on the worker). Ignored when using the
+      # auth-enabled image with an explicit HATCHET_API_KEY.
+      - hatchet_config:/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8888/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # SimpleAudit worker pool. Runs separately from the web process; the web server
+  # never executes model calls. Scale by adding replicas or GPU-labeled workers.
+  worker:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      HATCHET_SERVER_URL: http://hatchet-server:8888
+      HATCHET_GRPC_URL: hatchet-server:7077
+      WORKER_POOL: ${WORKER_POOL:-cpu}
+      # Worker reads its API token from this file (written by the auth-disabled
+      # hatchet dev image). Set HATCHET_API_KEY in .env to override with an
+      # explicit token for the auth-enabled image.
+      HATCHET_TOKEN_FILE: /config/authdisabled-token
+    volumes:
+      - hatchet_config:/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hatchet-server:
+        condition: service_healthy
+    command: python manage.py run_worker --pool ${WORKER_POOL:-cpu}
+    # Liveness: the worker runs as PID 1 and stays alive while connected to
+    # Hatchet; if it exits (e.g. cannot connect after retries) the container
+    # dies and restarts. The slim image has no ps/pgrep, so we read /proc/1/
+    # cmdline to confirm the run_worker process is the live entrypoint.
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\0' ' ' < /proc/1/cmdline | grep -q 'run_worker' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      MINIO_ENDPOINT: http://minio:9000
+      HATCHET_SERVER_URL: http://hatchet-server:8888
+      HATCHET_GRPC_URL: hatchet-server:7077
+      # Web enqueues audit tasks to Hatchet, so it needs the same worker API
+      # token as the worker. The auth-disabled dev image writes a per-instance
+      # JWT to this file; mounting the shared config volume read-only makes a
+      # fresh `docker compose up` work turnkey. Set HATCHET_API_KEY in .env to
+      # override with an explicit token for the auth-enabled image.
+      HATCHET_TOKEN_FILE: /config/authdisabled-token
+    volumes:
+      - hatchet_config:/config:ro
+    # MinIO is an optional profile (see above); the web service does not hard-
+    # depend on it so the core stack runs without object storage.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hatchet-server:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # Single-line sh -c so the argument list is unambiguous (a folded YAML block
+    # previously broke the flag parsing). Migrate + idempotent bootstrap + static
+    # collection, then serve with gunicorn.
+    command: sh -c "python manage.py migrate --noinput && python manage.py bootstrap_platform --username ${BOOTSTRAP_ADMIN_USERNAME:-admin} --email ${BOOTSTRAP_ADMIN_EMAIL:-admin@example.local} --password ${BOOTSTRAP_ADMIN_PASSWORD:?Set BOOTSTRAP_ADMIN_PASSWORD in .env} --project-name ${BOOTSTRAP_PROJECT_NAME:-Default} && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  minio_data:
+  # Shared Hatchet config; carries the auth-disabled worker JWT from server -> worker.
+  hatchet_config:
