@@ -138,3 +138,77 @@ def publish_version(request, project_id, set_id):
     serializer.is_valid(raise_exception=True)
     version = publish_scenario_set_version(scenario_set=scenario_set, user=request.user, scenario_ids=serializer.validated_data["scenario_ids"])
     return Response(ScenarioSetVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def export_scenarios(request, project_id):
+    """Export all scenarios in a project as a portable JSON document.
+
+    The export format is a list of scenario dicts with their latest revision
+    content. This can be imported into any other SimpleAudit platform instance.
+    """
+    project = _get_project_or_404(project_id)
+    _require_project_access(request.user, project)
+    scenarios = Scenario.objects.filter(project=project).prefetch_related("revisions").order_by("key")
+    data = []
+    for s in scenarios:
+        rev = s.revisions.order_by("-revision").first()
+        if not rev:
+            continue
+        data.append({
+            "key": s.key,
+            "title": s.title,
+            "description": rev.description,
+            "expected_behavior": rev.expected_behavior,
+            "test_prompt": rev.test_prompt,
+            "tags": s.tags or [],
+        })
+    response = Response({"scenarios": data, "count": len(data), "exported_at": __import__("django.utils.timezone", fromlist=["timezone"]).now().isoformat()})
+    response["Content-Disposition"] = 'attachment; filename="scenarios-export.json"'
+    return response
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def import_scenarios(request, project_id):
+    """Import scenarios from a JSON export document.
+
+    Accepts the format produced by export_scenarios: {"scenarios": [...]} or a
+    bare list. Scenarios with existing keys are skipped (not overwritten);
+    new ones are created. Returns a summary of created/skipped counts.
+    """
+    project = _get_project_or_404(project_id)
+    _require_project_access(request.user, project)
+    payload = request.data
+    items = payload.get("scenarios", payload) if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+        raise StableAPIError(detail="Expected a list of scenarios or {\"scenarios\": [...]}.", code="invalid_import_format", http_status=400)
+
+    created = 0
+    skipped = 0
+    errors = []
+    for item in items:
+        key = item.get("key", "").strip()
+        if not key:
+            errors.append({"item": item, "error": "missing key"})
+            continue
+        if Scenario.objects.filter(project=project, key=key).exists():
+            skipped += 1
+            continue
+        try:
+            create_scenario(
+                project=project,
+                user=request.user,
+                key=key,
+                title=item.get("title", key),
+                description=item.get("description", ""),
+                expected_behavior=item.get("expected_behavior", []),
+                test_prompt=item.get("test_prompt", ""),
+                tags=item.get("tags", []),
+            )
+            created += 1
+        except Exception as exc:
+            errors.append({"key": key, "error": str(exc)})
+
+    return Response({"created": created, "skipped": skipped, "errors": errors}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

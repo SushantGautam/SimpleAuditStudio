@@ -32,4 +32,6 @@ urlpatterns = [
         scenario_views.publish_version,
         name="scenario-set-publish",
     ),
+    path("projects/<int:project_id>/scenarios/export/", scenario_views.export_scenarios, name="scenario-export"),
+    path("projects/<int:project_id>/scenarios/import/", scenario_views.import_scenarios, name="scenario-import"),
 ]
