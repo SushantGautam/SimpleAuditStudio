@@ -327,13 +327,19 @@ class ScenarioEditView(ProjectMixin, View):
                 scenario.title = title
             scenario.category = category
             scenario.save()
-            _create_revision(scenario, desc, request.user)
-            # Auto-publish new version
-            if set_id:
-                sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
-                if sset:
-                    _publish_new_version(sset, request.user)
-            messages.success(request, f"Scenario '{scenario.title}' updated.")
+
+            # Only create a new revision + publish if content actually changed
+            latest_rev = scenario.revisions.order_by("-revision").first()
+            content_changed = latest_rev is None or latest_rev.description != desc
+            if content_changed:
+                _create_revision(scenario, desc, request.user)
+                if set_id:
+                    sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+                    if sset:
+                        _publish_new_version(sset, request.user)
+                messages.success(request, f"Scenario '{scenario.title}' updated (new version published).")
+            else:
+                messages.info(request, f"Scenario '{scenario.title}' saved (no content change, version unchanged).")
         return _scenario_redirect(set_id or None)
 
 

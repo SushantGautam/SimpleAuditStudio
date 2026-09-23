@@ -93,19 +93,23 @@
 
           <!-- Inline edit form (hidden by default) -->
           <div id="edit-scenario-{{ item.scenario.id }}" style="display:none" class="px-3 pb-3 pt-2 border-t border-gray-800 space-y-2">
-            <form method="post" action="{% url 'scenario_edit' item.scenario.id %}" class="space-y-2">
+            <form method="post" action="{% url 'scenario_edit' item.scenario.id %}" class="space-y-2"
+                  onsubmit="return confirmScenarioSave({{ item.scenario.id }}, this)">
               {% csrf_token %}
               <input type="hidden" name="set_id" value="{{ selected.id }}">
+              <input type="hidden" id="orig-desc-{{ item.scenario.id }}" value="{{ item.revision.description }}">
               <div class="grid grid-cols-2 gap-2">
                 <input type="text" name="title" value="{{ item.scenario.title }}" required
                        class="px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">
                 <input type="text" name="category" value="{{ item.scenario.category }}" placeholder="Category"
                        class="px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">
               </div>
-              <textarea name="description" rows="3" class="w-full px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">{{ item.revision.description }}</textarea>
-              <div class="flex gap-2">
+              <textarea name="description" rows="3" id="desc-{{ item.scenario.id }}"
+                        class="w-full px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">{{ item.revision.description }}</textarea>
+              <div class="flex gap-2 items-center">
                 <button class="px-3 py-1 rounded bg-accent text-white text-xs">Save</button>
                 <button type="button" onclick="document.getElementById('edit-scenario-{{ item.scenario.id }}').style.display='none'" class="px-3 py-1 rounded bg-surface-overlay text-gray-400 text-xs">Cancel</button>
+                <span id="version-hint-{{ item.scenario.id }}" class="text-xs text-amber-400 hidden"></span>
               </div>
             </form>
           </div>
@@ -162,4 +166,32 @@
   </div>
 </div>
 {% endif %}
+
+<script>
+// Live version hint: shows "Will publish as vN" when description changes
+const CURRENT_VERSION = {{ viewing_version.version|default:0 }};
+document.querySelectorAll('textarea[id^="desc-"]').forEach(ta => {
+  ta.addEventListener('input', function() {
+    const id = this.id.replace('desc-', '');
+    const orig = document.getElementById('orig-desc-' + id).value;
+    const hint = document.getElementById('version-hint-' + id);
+    if (this.value !== orig) {
+      hint.textContent = '⚡ Will publish as v' + (CURRENT_VERSION + 1);
+      hint.classList.remove('hidden');
+    } else {
+      hint.classList.add('hidden');
+    }
+  });
+});
+
+// Confirm before saving if content changed
+function confirmScenarioSave(scenarioId, form) {
+  const descEl = document.getElementById('desc-' + scenarioId);
+  const origEl = document.getElementById('orig-desc-' + scenarioId);
+  if (descEl && origEl && descEl.value !== origEl.value) {
+    return confirm('Content changed — this will save as a NEW VERSION (v' + (CURRENT_VERSION + 1) + ').\n\nContinue?');
+  }
+  return true; // no content change, just save metadata
+}
+</script>
 {% endblock %}
