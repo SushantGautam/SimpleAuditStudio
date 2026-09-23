@@ -26,6 +26,27 @@
 </form>
 
 {% if result %}
+{% if result.inputs %}
+<div class="mt-6 bg-surface-raised rounded-xl border border-gray-800 p-4">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Input Parameters</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="border-b border-gray-800">
+      <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Parameter</th>
+      {% for col in result.columns %}<th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">{{ col }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {% for row in result.inputs %}
+      <tr class="border-b border-gray-800/50 {% if row.differs %}bg-amber-900/10{% endif %}">
+        <td class="px-3 py-2 text-gray-400">{{ row.label }}{% if row.differs %} <span class="text-amber-400 text-xs">≠</span>{% endif %}</td>
+        {% for val in row.values %}
+        <td class="px-3 py-2 text-gray-300">{{ val|default:"—" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 <div class="mt-6 bg-surface-raised rounded-xl border border-gray-800 p-4">
   <h2 class="text-sm font-semibold text-gray-300 mb-3">Results</h2>
   {% if result.warnings %}

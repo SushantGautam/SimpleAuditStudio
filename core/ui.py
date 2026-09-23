@@ -359,6 +359,7 @@ class CompareView(ProjectMixin, TemplateView):
                 "warnings": raw["warnings"],
                 "columns": columns,
                 "rows": rows,
+                "inputs": raw.get("inputs", []),
                 "intersection_count": raw["intersection_count"],
             }
         return self.render_to_response(self.get_context_data(result=result))

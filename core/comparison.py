@@ -110,6 +110,29 @@ def compare_runs(project, run_ids: list[int]) -> dict:
             }
         results.append(entry)
 
+    # Build inputs comparison: key parameters that differ between runs
+    input_rows = []
+    param_defs = [
+        ("Target model", lambda r: r.target_endpoint.display_name if r.target_endpoint else "—"),
+        ("Auditor model", lambda r: r.auditor_endpoint.display_name if r.auditor_endpoint else "—"),
+        ("Judge model", lambda r: r.judge_endpoint.display_name if r.judge_endpoint else "—"),
+        ("Scenario set version", lambda r: f"v{r.scenario_set_version.version}" if r.scenario_set_version else "—"),
+        ("SimpleAudit version", lambda r: r.simpleaudit_version or "—"),
+        ("Git commit", lambda r: (r.git_commit[:8] + "…") if r.git_commit else "—"),
+        ("Temperature (target)", lambda r: (r.generation_parameters_snapshot or {}).get("temperature_target", "—")),
+        ("Temperature (auditor)", lambda r: (r.generation_parameters_snapshot or {}).get("temperature_auditor", "—")),
+        ("Temperature (judge)", lambda r: (r.generation_parameters_snapshot or {}).get("temperature_judge", "—")),
+        ("Max tokens", lambda r: (r.generation_parameters_snapshot or {}).get("max_tokens", "—")),
+        ("Top-p", lambda r: (r.generation_parameters_snapshot or {}).get("top_p", "—")),
+        ("Max turns", lambda r: (r.generation_parameters_snapshot or {}).get("max_turns", "—")),
+        ("Concurrency", lambda r: (r.generation_parameters_snapshot or {}).get("concurrency", "—")),
+        ("Language", lambda r: (r.generation_parameters_snapshot or {}).get("language", "—")),
+    ]
+    for label, getter in param_defs:
+        values = [getter(r) for r in runs]
+        differs = len(set(str(v) for v in values)) > 1
+        input_rows.append({"label": label, "values": values, "differs": differs})
+
     return {
         "compatible": len(warnings) == 0,
         "warnings": warnings,
@@ -127,6 +150,7 @@ def compare_runs(project, run_ids: list[int]) -> dict:
             }
             for r in runs
         ],
+        "inputs": input_rows,
         "intersection_count": len(common_keys),
         "results": results,
     }
