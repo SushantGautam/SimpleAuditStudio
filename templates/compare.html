@@ -3,6 +3,10 @@
 {% block content %}
 <h1 class="text-lg font-semibold text-gray-100 mb-6">Compare Audits</h1>
 
+{% if error %}
+<div class="mb-4 text-sm text-red-300 bg-red-900/30 rounded-lg px-4 py-2">{{ error }}</div>
+{% endif %}
+
 <form method="post" class="max-w-2xl">
   {% csrf_token %}
   <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-6">
@@ -14,7 +18,7 @@
     <div id="compare-run-list" class="space-y-2 max-h-64 overflow-y-auto">
       {% for run in runs %}
       <label class="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-overlay/50 cursor-pointer hover:bg-surface-overlay">
-        <input type="checkbox" name="runs[]" value="{{ run.id }}" class="accent-[#6c8cff]">
+        <input type="checkbox" name="runs[]" value="{{ run.id }}" class="accent-[#6c8cff]" {% if run.id in selected_ids %}checked{% endif %}>
         <a href="/audits/{{ run.id }}/" onclick="event.preventDefault()" class="text-sm text-gray-200 hover:text-accent transition-colors">#{{ run.id }}</a>
         <a href="/scenarios/?set={{ run.scenario_set_version.scenario_set_id }}" onclick="event.preventDefault()" class="text-xs text-gray-500 hover:text-accent transition-colors">{{ run.scenario_set_version.scenario_set.name|default:"—" }}</a>
         <span class="text-xs text-gray-600 ml-auto">{{ run.created_at|date:"M j" }}</span>
@@ -25,7 +29,12 @@
     <p class="text-sm text-gray-500">No completed audits to compare.</p>
     {% endif %}
   </div>
-  <button type="submit" class="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover">Compare</button>
+  <div class="flex items-center gap-3">
+    <button type="submit" class="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover">Compare</button>
+    {% if result and selected_ids %}
+    <a href="?runs={{ selected_ids|join:','}}" class="text-xs text-gray-500 hover:text-accent transition-colors">Copy shareable link</a>
+    {% endif %}
+  </div>
 </form>
 
 {% if result %}
@@ -53,7 +62,10 @@
 </div>
 {% endif %}
 <div class="mt-6 bg-surface-raised rounded-xl border border-gray-800 p-4">
-  <h2 class="text-sm font-semibold text-gray-300 mb-3">Results</h2>
+  <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+    <h2 class="text-sm font-semibold text-gray-300">Results{% if result.intersection_count is not None %} <span class="text-gray-500 font-normal">— Comparing {{ result.intersection_count }} common scenarios</span>{% endif %}</h2>
+    <button onclick="exportCompareCSV()" class="px-3 py-1.5 rounded-lg bg-surface-overlay border border-gray-700 text-xs text-gray-300 hover:text-accent hover:border-accent/50 transition-colors">Export CSV</button>
+  </div>
   {% if result.warnings %}
   <div class="mb-3 space-y-1">
     {% for w in result.warnings %}
@@ -62,7 +74,7 @@
   </div>
   {% endif %}
   {% if result.rows %}
-  <table class="w-full text-sm">
+  <table id="compare-results-table" class="w-full text-sm">
     <thead><tr class="border-b border-gray-800">
       <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Scenario</th>
       {% for meta in result.run_meta %}<th class="text-left px-3 py-2 text-xs text-gray-500 uppercase"><a href="/audits/{{ meta.id }}/" class="hover:text-accent transition-colors">#{{ meta.id }}</a></th>{% endfor %}
@@ -86,6 +98,12 @@
   {% else %}
   <p class="text-sm text-gray-500">No comparable scenarios found between selected runs.</p>
   {% endif %}
+  <!-- Severity legend -->
+  <div class="mt-4 pt-3 border-t border-gray-800/60 flex items-center gap-4 text-xs text-gray-500">
+    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> pass / low</span>
+    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> medium</span>
+    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-400 inline-block"></span> high / critical</span>
+  </div>
 </div>
 {% endif %}
 
@@ -95,6 +113,21 @@ function filterCompareRuns(query) {
   document.querySelectorAll('#compare-run-list label').forEach(el => {
     el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
+}
+function exportCompareCSV() {
+  const table = document.getElementById('compare-results-table');
+  if (!table) return;
+  const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+    Array.from(tr.querySelectorAll('th, td')).map(cell => '"' + cell.textContent.trim().replace(/"/g, '""') + '"').join(',')
+  );
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'comparison.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 </script>
 {% endblock %}

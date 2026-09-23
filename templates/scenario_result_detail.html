@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ scenario_name }} — Audit #{{ run.id }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{% url 'audit_detail' run.id %}" class="text-xs text-gray-500 hover:text-accent">← Back to Audit #{{ run.id }}</a>
+</div>
+
+<!-- Header -->
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <h1 class="text-lg font-semibold text-gray-100">{{ scenario_name }}</h1>
+    {% if severity == "pass" or severity == "low" %}<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300">{{ severity }}</span>
+    {% elif severity == "medium" %}<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-900/50 text-amber-300">{{ severity }}</span>
+    {% else %}<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-300">{{ severity|default:"unknown" }}</span>{% endif %}
+  </div>
+  <a href="{% url 'audit_export' run.id %}?format=json" class="px-3 py-1.5 rounded-lg bg-surface-overlay text-gray-400 text-xs font-medium hover:text-gray-200 transition-colors">Export JSON</a>
+</div>
+
+{% if summary %}
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-4">
+  <p class="text-sm text-gray-300">{{ summary }}</p>
+</div>
+{% endif %}
+
+<!-- Conversation -->
+{% if conversation %}
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-4">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Conversation ({{ conversation|length }} turns)</h2>
+  <div class="space-y-3 max-h-96 overflow-y-auto">
+    {% for turn in conversation %}
+    <div class="rounded-lg p-3 {% if turn.role == 'user' or turn.role == 'system' %}bg-surface-overlay/70{% else %}bg-blue-950/30{% endif %}">
+      <p class="text-[10px] uppercase tracking-wide font-semibold {% if turn.role == 'assistant' %}text-blue-400{% else %}text-gray-500{% endif %} mb-1">{{ turn.role|default:"message" }}</p>
+      <p class="text-sm text-gray-200 whitespace-pre-wrap">{{ turn.content|default:turn.text|default:"" }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Issues Found -->
+{% if issues %}
+<div class="bg-surface-raised rounded-xl border border-red-900/30 p-4 mb-4">
+  <h2 class="text-sm font-semibold text-red-300 mb-3">Issues Found ({{ issues|length }})</h2>
+  <ul class="space-y-2">
+    {% for issue in issues %}
+    <li class="text-sm text-gray-200 flex items-start gap-2">
+      <span class="text-red-400 mt-0.5 shrink-0">•</span>
+      <span>{{ issue.description|default:issue.issue|default:issue.severity|default:issue }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<!-- Judge Rationale / Evidence -->
+{% if rationale %}
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-4">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Judge Rationale</h2>
+  <p class="text-sm text-gray-300 whitespace-pre-wrap">{{ rationale }}</p>
+</div>
+{% endif %}
+
+<!-- Other Keys -->
+{% if other_keys %}
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-4">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Details</h2>
+  <div class="space-y-2">
+    {% for key, value in other_keys.items %}
+    <div class="flex items-start gap-2 text-sm">
+      <span class="text-gray-500 shrink-0 min-w-[120px]">{{ key }}</span>
+      <span class="text-gray-300 break-all">{{ value }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Raw JSON -->
+{% if raw_json %}
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+  <details>
+    <summary class="text-sm font-semibold text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">Raw JSON</summary>
+    <pre class="mt-3 text-xs text-gray-400 font-mono overflow-x-auto max-h-96 overflow-y-auto bg-surface-overlay rounded-lg p-3">{{ raw_json }}</pre>
+  </details>
+</div>
+{% endif %}
+
+{% if not raw_json %}
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-8 text-center">
+  <p class="text-sm text-gray-500">No result data available for this scenario.</p>
+</div>
+{% endif %}
+{% endblock %}

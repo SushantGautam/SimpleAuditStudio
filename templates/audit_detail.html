@@ -159,18 +159,23 @@
 
 <!-- Results -->
 <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
-  <h2 class="text-sm font-semibold text-gray-300 mb-3">Results ({{ results|length }})</h2>
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold text-gray-300">Results ({{ results|length }})</h2>
+    {% if results %}
+    <a href="{% url 'audit_export' run.id %}?format=json" class="px-2.5 py-1 rounded-lg bg-surface-overlay text-gray-400 text-xs font-medium hover:text-gray-200 transition-colors">Export</a>
+    {% endif %}
+  </div>
   {% if results %}
   <div class="space-y-2 max-h-96 overflow-y-auto">
     {% for r in results %}
-    <div class="px-3 py-2.5 rounded-lg bg-surface-overlay/50">
-      <div class="flex items-center justify-between">
-        {% if r.scenario_id %}<a href="/scenarios/?set={{ r.set_id }}&scenario={{ r.scenario_id }}" class="text-sm text-gray-200 hover:text-accent transition-colors">{{ r.scenario_name }}</a>{% else %}<span class="text-sm text-gray-200">{{ r.scenario_name }}</span>{% endif %}
-        {% if r.severity == "pass" or r.severity == "low" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300">{{ r.severity }}</span>
+    <div class="px-3 py-2.5 rounded-lg bg-surface-overlay/50 flex items-center justify-between group">
+      <a href="{% url 'scenario_result_detail' run.id r.result_id %}" class="flex-1 min-w-0 group-hover:text-accent transition-colors">
+        <span class="text-sm text-gray-200 block truncate">{{ r.scenario_name }}</span>
+        {% if r.summary %}<p class="text-xs text-gray-500 mt-1 line-clamp-2">{{ r.summary }}</p>{% endif %}
+      </a>
+      <span class="ml-3 shrink-0">{% if r.severity == "pass" or r.severity == "low" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300">{{ r.severity }}</span>
         {% elif r.severity == "medium" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-900/50 text-amber-300">{{ r.severity }}</span>
-        {% else %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-300">{{ r.severity }}</span>{% endif %}
-      </div>
-      {% if r.summary %}<p class="text-xs text-gray-500 mt-1 line-clamp-2">{{ r.summary }}</p>{% endif %}
+        {% else %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-300">{{ r.severity }}</span>{% endif %}</span>
     </div>
     {% endfor %}
   </div>

@@ -5,39 +5,47 @@
 
 <!-- Stats -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center">
+  <a href="/dashboard/" class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center cursor-pointer hover:border-accent/40 hover:bg-surface-overlay transition-colors {% if not current_status %}border-accent/30{% endif %}">
     <span class="text-2xl font-bold text-accent">{{ stats.total }}</span>
     <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Total</p>
-  </div>
-  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center">
+  </a>
+  <a href="/dashboard/?status=active" class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center cursor-pointer hover:border-amber-500/40 hover:bg-surface-overlay transition-colors {% if current_status == 'active' %}border-amber-500/30{% endif %}">
     <span class="text-2xl font-bold text-amber-400">{{ stats.active }}</span>
     <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active</p>
-  </div>
-  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center">
+  </a>
+  <a href="/dashboard/?status=completed" class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center cursor-pointer hover:border-emerald-500/40 hover:bg-surface-overlay transition-colors {% if current_status == 'completed' %}border-emerald-500/30{% endif %}">
     <span class="text-2xl font-bold text-emerald-400">{{ stats.completed }}</span>
     <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Completed</p>
-  </div>
-  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center">
+  </a>
+  <a href="/dashboard/?status=failed" class="bg-surface-raised rounded-xl border border-gray-800 p-4 text-center cursor-pointer hover:border-red-500/40 hover:bg-surface-overlay transition-colors {% if current_status == 'failed' %}border-red-500/30{% endif %}">
     <span class="text-2xl font-bold text-red-400">{{ stats.failed }}</span>
     <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Failed</p>
-  </div>
+  </a>
 </div>
 
 <!-- Runs table -->
 <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
-  <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-    <h2 class="text-sm font-semibold text-gray-300">Audit Runs</h2>
-    <div class="flex items-center gap-2">
-      <!-- Status filter tabs -->
-      <div class="flex gap-1 text-xs">
-        <a href="/dashboard/" class="px-2 py-1 rounded {% if not current_status %}bg-accent/20 text-accent{% else %}text-gray-500 hover:text-gray-300{% endif %}">All</a>
-        <a href="/dashboard/?status=active" class="px-2 py-1 rounded {% if current_status == 'active' %}bg-amber-900/40 text-amber-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Active</a>
-        <a href="/dashboard/?status=completed" class="px-2 py-1 rounded {% if current_status == 'completed' %}bg-emerald-900/40 text-emerald-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Done</a>
-        <a href="/dashboard/?status=failed" class="px-2 py-1 rounded {% if current_status == 'failed' %}bg-red-900/40 text-red-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Failed</a>
+  <form method="get" action="/dashboard/">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <h2 class="text-sm font-semibold text-gray-300">Audit Runs</h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Search input -->
+        <input type="hidden" name="status" value="{{ current_status }}">
+        <input type="text" name="q" placeholder="Search runs…" value="{{ search_query }}"
+               class="w-36 px-2 py-1 rounded-lg bg-surface-overlay border border-gray-700 text-xs text-gray-300 focus:outline-none focus:ring-2 focus:ring-accent/50">
+        <!-- Status filter tabs -->
+        <div class="flex gap-1 text-xs">
+          <a href="/dashboard/{% if search_query %}?q={{ search_query|urlencode }}{% endif %}" class="px-2 py-1 rounded {% if not current_status %}bg-accent/20 text-accent{% else %}text-gray-500 hover:text-gray-300{% endif %}">All</a>
+          <a href="/dashboard/?status=active{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="px-2 py-1 rounded {% if current_status == 'active' %}bg-amber-900/40 text-amber-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Active</a>
+          <a href="/dashboard/?status=completed{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="px-2 py-1 rounded {% if current_status == 'completed' %}bg-emerald-900/40 text-emerald-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Done</a>
+          <a href="/dashboard/?status=failed{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="px-2 py-1 rounded {% if current_status == 'failed' %}bg-red-900/40 text-red-300{% else %}text-gray-500 hover:text-gray-300{% endif %}">Failed</a>
+        </div>
+        <button type="submit" class="px-2 py-1 rounded-lg bg-surface-overlay text-gray-500 text-xs hover:text-gray-300 transition-colors" title="Search">⌕</button>
+        <a href="{% url 'dashboard_export' %}{% if current_status %}?status={{ current_status }}{% endif %}{% if search_query %}{% if not current_status %}?{% else %}&{% endif %}q={{ search_query|urlencode }}{% endif %}" class="px-2.5 py-1.5 rounded-lg bg-surface-overlay text-gray-400 text-xs font-medium hover:text-gray-200 transition-colors">Export CSV</a>
+        <a href="{% url 'new_audit' %}" class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ New Audit</a>
       </div>
-      <a href="{% url 'new_audit' %}" class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ New Audit</a>
     </div>
-  </div>
+  </form>
   {% if runs %}
   <div class="overflow-x-auto">
     <table class="w-full text-sm">
@@ -46,7 +54,13 @@
           <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase">ID</th>
           <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase">Scenario Set</th>
           <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase">Status</th>
-          <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase">Created</th>
+          <th class="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase">
+            {% if current_sort == 'created_at' %}
+            <a href="/dashboard/?sort=-created_at{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="hover:text-gray-300">Created ↑</a>
+            {% else %}
+            <a href="/dashboard/?sort=created_at{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="hover:text-gray-300">Created ↓</a>
+            {% endif %}
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -76,10 +90,10 @@
     <span class="text-xs text-gray-500">Page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ paginator.count }} runs)</span>
     <div class="flex gap-1">
       {% if page_obj.has_previous %}
-      <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">← Prev</a>
+      <a href="?page={{ page_obj.previous_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_sort != '-created_at' %}&sort={{ current_sort }}{% endif %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">← Prev</a>
       {% endif %}
       {% if page_obj.has_next %}
-      <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Next →</a>
+      <a href="?page={{ page_obj.next_page_number }}{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}{% if current_sort != '-created_at' %}&sort={{ current_sort }}{% endif %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Next →</a>
       {% endif %}
     </div>
   </div>

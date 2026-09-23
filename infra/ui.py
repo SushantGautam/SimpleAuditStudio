@@ -1,13 +1,15 @@
 """Server-rendered UI — Django CBVs + Forms + HTMX."""
+import csv
 import hashlib
+import io
 import json
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import JsonResponse
-from django.shortcuts import redirect
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, TemplateView, View
 
@@ -92,16 +94,29 @@ class DashboardView(ProjectMixin, ListView):
     context_object_name = "runs"
     paginate_by = 25
 
+    _SORT_WHITELIST = {"created_at", "-created_at", "status", "-id"}
+
     def get_queryset(self):
+        from django.db.models import Q
+
         qs = AuditRun.objects.filter(project=self.request.project).select_related(
             "scenario_set_version__scenario_set"
-        ).order_by("-created_at")
+        )
         # Status filter via ?status=active|completed|failed|cancelled
         status = self.request.GET.get("status", "")
         if status == "active":
             qs = qs.exclude(status__in=["completed", "failed", "cancelled"])
         elif status in ("completed", "failed", "cancelled"):
             qs = qs.filter(status=status)
+        # Search via ?q=
+        q = (self.request.GET.get("q") or "").strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(scenario_set_version__scenario_set__name__icontains=q))
+        # Sort via ?sort= (whitelisted)
+        sort = self.request.GET.get("sort", "-created_at")
+        if sort not in self._SORT_WHITELIST:
+            sort = "-created_at"
+        qs = qs.order_by(sort)
         return qs
 
     def get_context_data(self, **kw):
@@ -114,6 +129,8 @@ class DashboardView(ProjectMixin, ListView):
             "failed": base.filter(status="failed").count(),
         }
         ctx["current_status"] = self.request.GET.get("status", "")
+        ctx["search_query"] = (self.request.GET.get("q") or "").strip()
+        ctx["current_sort"] = self.request.GET.get("sort", "-created_at")
         return ctx
 
 
@@ -187,9 +204,15 @@ class QueueView(ProjectMixin, TemplateView):
             .select_related("scenario_set_version__scenario_set")
             .order_by("-created_at")[:100]
         )
-        active_statuses = ["queued", "preparing", "target_execution", "auditing", "judging", "aggregation"]
+        active_statuses = ["queued", "preparing", "target_execution", "auditing", "judging", "aggregation", "report_generation"]
+        now = timezone.now()
+        active = []
+        for r in runs:
+            if r.status in active_statuses:
+                r.elapsed = (now - r.started_at).total_seconds() if r.started_at else None
+                active.append(r)
         kw.update(
-            active=[r for r in runs if r.status in active_statuses],
+            active=active,
             finished=[r for r in runs if r.status not in active_statuses],
         )
         return super().get_context_data(**kw)
@@ -565,12 +588,19 @@ class ModelsView(ProjectMixin, TemplateView):
     template_name = "models.html"
 
     def get_context_data(self, **kw):
+        from django.db.models import Q
+
         p = self.request.project
         highlight_id = self.request.GET.get("highlight")
+        q = (self.request.GET.get("q") or "").strip()
+        endpoints = ModelEndpoint.objects.filter(project=p)
+        if q:
+            endpoints = endpoints.filter(Q(display_name__icontains=q) | Q(model_id__icontains=q))
         kw.update(
-            endpoints=ModelEndpoint.objects.filter(project=p).order_by("display_name"),
+            endpoints=endpoints.order_by("display_name"),
             profiles=AuditProfile.objects.filter(project=p).order_by("name"),
             highlight_id=highlight_id,
+            search_query=q,
             error=None,
         )
         return super().get_context_data(**kw)
@@ -604,7 +634,9 @@ class ModelsView(ProjectMixin, TemplateView):
                 ep.model_id = request.POST.get("model_id", ep.model_id).strip()
                 ep.provider = request.POST.get("provider", ep.provider)
                 ep.secret_reference = request.POST.get("secret_reference", "").strip()
-                ep.api_key_direct = request.POST.get("api_key_direct", "").strip()
+                new_key = request.POST.get("api_key_direct", "").strip()
+                if new_key:  # empty means "keep existing" (form no longer echoes the stored key)
+                    ep.api_key_direct = new_key
                 ep.enabled = request.POST.get("enabled") == "1"
                 ep.save()
         elif action == "edit_profile":
@@ -617,6 +649,9 @@ class ModelsView(ProjectMixin, TemplateView):
                 prof.temperature_target = float(request.POST.get("temp_target", prof.temperature_target))
                 prof.temperature_auditor = float(request.POST.get("temp_auditor", prof.temperature_auditor))
                 prof.temperature_judge = float(request.POST.get("temp_judge", prof.temperature_judge))
+                mt_raw = (request.POST.get("max_tokens") or "").strip()
+                if mt_raw:
+                    prof.max_tokens = int(mt_raw)
                 lang = request.POST.get("language", "").strip()
                 prof.language = lang or None
                 prof.save()
@@ -642,55 +677,96 @@ class ModelDeleteView(ProjectMixin, View):
         return redirect("/models/")
 
 
+class ProfileDeleteView(ProjectMixin, View):
+    def post(self, request, profile_id):
+        prof = AuditProfile.objects.filter(pk=profile_id, project=request.project).first()
+        if prof:
+            if prof.audit_runs.exists():
+                messages.error(request, f"Cannot delete '{prof.name}': it is referenced by audit runs.")
+            else:
+                name = prof.name
+                prof.delete()
+                messages.success(request, f"Audit profile '{name}' deleted.")
+        return redirect("/models/")
+
+
 # ─── Compare ─────────────────────────────────────────────────────────────────
 
 class CompareView(ProjectMixin, TemplateView):
     template_name = "compare.html"
 
+    @staticmethod
+    def _parse_run_ids(raw_value: str) -> list[int]:
+        return [int(x) for x in (raw_value or "").split(",") if x.strip().isdigit()]
+
+    @staticmethod
+    def _reshape_result(raw: dict) -> dict:
+        columns = [f"#{r['id']} ({r['target'] or '?'})" for r in raw["runs"]]
+        rows = []
+        for entry in raw["results"]:
+            values = []
+            for col_run_id in [str(r["id"]) for r in raw["runs"]]:
+                rdata = entry["runs"].get(col_run_id, {})
+                values.append(rdata.get("severity") or rdata.get("status") or "—")
+            rows.append({"scenario": entry["scenario_key"], "values": values})
+        # Per-run link metadata
+        run_meta = []
+        for r in raw["runs"]:
+            run_obj = AuditRun.objects.filter(id=r["id"]).select_related(
+                "target_endpoint", "auditor_endpoint", "judge_endpoint",
+                "scenario_set_version__scenario_set"
+            ).first()
+            run_meta.append({
+                "id": r["id"],
+                "target_endpoint_id": run_obj.target_endpoint_id if run_obj else None,
+                "auditor_endpoint_id": run_obj.auditor_endpoint_id if run_obj else None,
+                "judge_endpoint_id": run_obj.judge_endpoint_id if run_obj else None,
+                "scenario_set_id": run_obj.scenario_set_version.scenario_set_id if run_obj and run_obj.scenario_set_version else None,
+            })
+        return {
+            "warnings": raw["warnings"],
+            "columns": columns,
+            "rows": rows,
+            "inputs": raw.get("inputs", []),
+            "run_meta": run_meta,
+            "intersection_count": raw["intersection_count"],
+        }
+
     def get_context_data(self, **kw):
-        kw["runs"] = AuditRun.objects.filter(project=self.request.project, status="completed").select_related(
-            "scenario_set_version__scenario_set"
-        ).order_by("-created_at")[:50]
-        kw.setdefault("result", None)
+        p = self.request.project
+        selected_ids = self._parse_run_ids(self.request.GET.get("runs", ""))
+        result = None
+        error = None
+        if selected_ids:
+            if len(selected_ids) < 2:
+                error = "Select at least 2 runs to compare."
+            else:
+                try:
+                    result = self._reshape_result(compare_runs(p, selected_ids))
+                except Exception as e:
+                    error = str(e)
+        kw.update(
+            runs=AuditRun.objects.filter(project=p, status="completed").select_related(
+                "scenario_set_version__scenario_set"
+            ).order_by("-created_at")[:50],
+            selected_ids=selected_ids,
+            result=result,
+            error=error,
+        )
         return super().get_context_data(**kw)
 
     def post(self, request, *args, **kwargs):
         ids = [int(x) for x in request.POST.getlist("runs[]") if x.isdigit()]
-        raw = compare_runs(request.project, ids) if len(ids) >= 2 else None
-        # Reshape for template
         result = None
-        if raw:
-            columns = [f"#{r['id']} ({r['target'] or '?'})" for r in raw["runs"]]
-            rows = []
-            for entry in raw["results"]:
-                values = []
-                for col_run_id in [str(r["id"]) for r in raw["runs"]]:
-                    rdata = entry["runs"].get(col_run_id, {})
-                    values.append(rdata.get("severity") or rdata.get("status") or "—")
-                rows.append({"scenario": entry["scenario_key"], "values": values})
-            # Per-run link metadata
-            run_meta = []
-            for r in raw["runs"]:
-                run_obj = AuditRun.objects.filter(id=r["id"]).select_related(
-                    "target_endpoint", "auditor_endpoint", "judge_endpoint",
-                    "scenario_set_version__scenario_set"
-                ).first()
-                run_meta.append({
-                    "id": r["id"],
-                    "target_endpoint_id": run_obj.target_endpoint_id if run_obj else None,
-                    "auditor_endpoint_id": run_obj.auditor_endpoint_id if run_obj else None,
-                    "judge_endpoint_id": run_obj.judge_endpoint_id if run_obj else None,
-                    "scenario_set_id": run_obj.scenario_set_version.scenario_set_id if run_obj and run_obj.scenario_set_version else None,
-                })
-            result = {
-                "warnings": raw["warnings"],
-                "columns": columns,
-                "rows": rows,
-                "inputs": raw.get("inputs", []),
-                "run_meta": run_meta,
-                "intersection_count": raw["intersection_count"],
-            }
-        return self.render_to_response(self.get_context_data(result=result))
+        error = None
+        if len(ids) < 2:
+            error = "Select at least 2 runs to compare."
+        else:
+            try:
+                result = self._reshape_result(compare_runs(request.project, ids))
+            except Exception as e:
+                error = str(e)
+        return self.render_to_response(self.get_context_data(result=result, error=error, selected_ids=ids))
 
 
 # ─── Audit Detail ────────────────────────────────────────────────────────────
@@ -712,10 +788,11 @@ class AuditDetailView(ProjectMixin, DetailView):
         set_id = run.scenario_set_version.scenario_set_id
         items = {str(vi.pk): vi for vi in ScenarioSetVersionItem.objects.filter(version=run.scenario_set_version).select_related("scenario")}
         results = []
-        for sr in ScenarioResult.objects.filter(run_id=run.id):
+        for sr in ScenarioResult.objects.filter(run_id=run.id).order_by("id"):
             item = items.get(sr.version_item_id)
             r = sr.result or {}
             results.append({
+                "result_id": sr.pk,
                 "scenario_name": item.scenario.title if item else sr.version_item_id,
                 "scenario_id": item.scenario_id if item else None,
                 "set_id": set_id,
@@ -736,3 +813,117 @@ class AuditCancelView(ProjectMixin, View):
             run.status = AuditRun.Status.CANCELLED
             run.save(update_fields=["status"])
         return redirect(f"/audits/{run_id}/")
+
+
+# ─── Scenario Result Detail ──────────────────────────────────────────────────
+
+class ScenarioResultDetailView(ProjectMixin, TemplateView):
+    template_name = "scenario_result_detail.html"
+
+    def get_context_data(self, **kw):
+        run_id = self.kwargs["run_id"]
+        result_id = self.kwargs["result_id"]
+        run = get_object_or_404(AuditRun, pk=run_id, project=self.request.project)
+        sr = get_object_or_404(ScenarioResult, pk=result_id, run_id=run_id)
+
+        # Resolve scenario name via version item
+        item = ScenarioSetVersionItem.objects.filter(pk=sr.version_item_id).select_related("scenario").first()
+        scenario_name = item.scenario.title if item else f"Scenario {sr.version_item_id}"
+
+        # Parse result JSON into structured sections
+        result_data = sr.result or {}
+        conversation = result_data.get("conversation", [])
+        issues = result_data.get("issues_found", result_data.get("issues", []))
+        rationale = result_data.get("rationale", result_data.get("evidence", result_data.get("judge_rationale", "")))
+        severity = result_data.get("severity", sr.status)
+        summary = result_data.get("summary", "")
+
+        # Collect remaining keys not already displayed as named sections
+        known_keys = {"conversation", "issues_found", "issues", "rationale", "evidence", "judge_rationale", "severity", "summary"}
+        other_keys = {k: v for k, v in result_data.items() if k not in known_keys}
+
+        kw.update(
+            run=run,
+            sr=sr,
+            scenario_name=scenario_name,
+            severity=severity,
+            summary=summary,
+            conversation=conversation,
+            issues=issues,
+            rationale=rationale,
+            other_keys=other_keys,
+            raw_json=json.dumps(result_data, indent=2, ensure_ascii=False) if result_data else "",
+        )
+        return super().get_context_data(**kw)
+
+
+# ─── Export Views ────────────────────────────────────────────────────────────
+
+class AuditExportView(ProjectMixin, View):
+    """Export audit results as JSON or CSV download."""
+
+    def get(self, request, run_id):
+        run = get_object_or_404(AuditRun, pk=run_id, project=request.project)
+        fmt = request.GET.get("format", "json").lower()
+
+        items = {str(vi.pk): vi for vi in ScenarioSetVersionItem.objects.filter(version=run.scenario_set_version).select_related("scenario")}
+        rows = []
+        for sr in ScenarioResult.objects.filter(run_id=run.id).order_by("id"):
+            item = items.get(sr.version_item_id)
+            r = sr.result or {}
+            rows.append({
+                "id": sr.id,
+                "scenario_name": item.scenario.title if item else str(sr.version_item_id),
+                "severity": r.get("severity", sr.status),
+                "summary": r.get("summary", ""),
+                "result": r,
+            })
+
+        filename = f"audit_{run.id}_results.{fmt}"
+
+        if fmt == "csv":
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(["id", "scenario_name", "severity", "summary"])
+            for row in rows:
+                writer.writerow([row["id"], row["scenario_name"], row["severity"], row["summary"]])
+            response = HttpResponse(buf.getvalue(), content_type="text/csv; charset=utf-8")
+        else:
+            payload = json.dumps(rows, indent=2, ensure_ascii=False)
+            response = HttpResponse(payload, content_type="application/json; charset=utf-8")
+
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class DashboardExportView(ProjectMixin, View):
+    """Export dashboard runs as CSV, respecting ?status= filter."""
+
+    def get(self, request):
+        qs = AuditRun.objects.filter(project=request.project).select_related(
+            "scenario_set_version__scenario_set"
+        ).order_by("-created_at")
+        status = request.GET.get("status", "")
+        if status == "active":
+            qs = qs.exclude(status__in=["completed", "failed", "cancelled"])
+        elif status in ("completed", "failed", "cancelled"):
+            qs = qs.filter(status=status)
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["id", "name", "status", "scenario_set", "created_at", "started_at", "finished_at"])
+        for run in qs:
+            set_name = run.scenario_set_version.scenario_set.name if run.scenario_set_version else ""
+            writer.writerow([
+                run.id,
+                run.name,
+                run.status,
+                set_name,
+                run.created_at.isoformat() if run.created_at else "",
+                run.started_at.isoformat() if run.started_at else "",
+                run.finished_at.isoformat() if run.finished_at else "",
+            ])
+
+        response = HttpResponse(buf.getvalue(), content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="dashboard_runs.csv"'
+        return response
