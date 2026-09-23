@@ -10,53 +10,116 @@
     <a href="?set={{ s.id }}"
        class="block px-4 py-3 rounded-xl border text-sm transition-colors {% if selected and selected.id == s.id %}bg-accent/15 border-accent/30 text-accent{% else %}bg-surface-raised border-gray-800 text-gray-300 hover:border-gray-600{% endif %}">
       <span class="font-medium">{{ s.name }}</span>
-      <span class="text-xs text-gray-500 ml-2">{{ s.scenarios.count }} scenarios</span>
+      <span class="text-xs text-gray-500 ml-2">{{ s.versions.count }}v</span>
     </a>
     {% empty %}
     <p class="text-sm text-gray-500">No scenario sets yet.</p>
     {% endfor %}
+
+    <!-- Create new set -->
+    <form method="post" action="{% url 'scenario_set_create' %}" class="pt-2 border-t border-gray-800 mt-3 space-y-2">
+      {% csrf_token %}
+      <input type="text" name="name" placeholder="New set name" required
+             class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+      <input type="text" name="description" placeholder="Description (optional)"
+             class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+      <button class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ New Set</button>
+    </form>
   </div>
 
   <!-- Detail panel -->
   <div class="md:col-span-2">
     {% if selected %}
     <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-semibold text-gray-200">{{ selected.name }}</h2>
-        <div class="flex gap-2">
+      <!-- Header: name + actions -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-gray-200">{{ selected.name }}</h2>
+          {% if viewing_version %}<span class="text-xs text-gray-500">(v{{ viewing_version.version }})</span>{% endif %}
+        </div>
+        <div class="flex gap-2 items-center">
           <a href="{% url 'scenario_export' selected.id %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Export</a>
-          <form method="post" action="{% url 'scenario_publish' selected.id %}" class="inline">
+          <button onclick="document.getElementById('edit-set-modal').style.display='block'" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Edit</button>
+          <form method="post" action="{% url 'scenario_set_delete' selected.id %}" onsubmit="return confirm('Delete this set and all its versions?')">
             {% csrf_token %}
-            <button class="px-3 py-1.5 rounded-lg text-xs bg-accent/20 text-accent hover:bg-accent/30 whitespace-nowrap">Publish v{{ selected.versions.count|add:"1" }}</button>
+            <button class="px-2 py-1 rounded text-xs bg-red-900/30 text-red-400 hover:bg-red-900/50">Delete</button>
           </form>
         </div>
       </div>
 
+      <!-- Version selector -->
+      {% if versions %}
+      <div class="flex items-center gap-2 mb-4 flex-wrap">
+        <label class="text-xs text-gray-500">Version:</label>
+        <select onchange="if(this.value) window.location='?set={{ selected.id }}&version='+this.value; else window.location='?set={{ selected.id }}'"
+                class="px-2 py-1 rounded bg-surface-overlay border border-gray-700 text-xs text-gray-300">
+          {% for v in versions %}
+          <option value="{{ v.version }}" {% if viewing_version and viewing_version.version == v.version %}selected{% endif %}>
+            v{{ v.version }} — {{ v.scenario_count }} scenarios — {{ v.published_at|date:"M j, H:i" }}
+          </option>
+          {% endfor %}
+        </select>
+        {% if viewing_version and viewing_version != versions.0 %}
+        <form method="post" action="{% url 'scenario_revert' selected.id %}" onsubmit="return confirm('Revert to v{{ viewing_version.version }}? This creates a NEW version with the old content.')">
+          {% csrf_token %}
+          <input type="hidden" name="target_version" value="{{ viewing_version.version }}">
+          <button class="px-2 py-1 rounded text-xs bg-amber-900/30 text-amber-400 hover:bg-amber-900/50">↩ Revert to v{{ viewing_version.version }}</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <!-- Scenario list -->
-      <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
+      <div class="space-y-2 mb-4 max-h-72 overflow-y-auto">
         {% for item in items %}
-        <div id="scenario-{{ item.scenario.id }}" class="flex items-center justify-between px-3 py-2 rounded-lg{% if request.GET.scenario == item.scenario.id|stringformat:'s' %} bg-accent/15 border border-accent/30{% else %} bg-surface-overlay/50{% endif %}">
-          <div class="min-w-0">
-            <span class="text-sm text-gray-200 truncate">{{ item.scenario.title }}</span>
-            {% if item.scenario.category %}<span class="ml-2 text-xs text-gray-500">{{ item.scenario.category }}</span>{% endif %}
-            <span class="ml-2 text-xs text-gray-600">rev {{ item.revision.revision }}</span>
+        <div id="scenario-{{ item.scenario.id }}" class="rounded-lg border border-gray-800 bg-surface-overlay/50 overflow-hidden">
+          <div class="flex items-center justify-between px-3 py-2">
+            <div class="min-w-0 flex-1">
+              <span class="text-sm text-gray-200 truncate">{{ item.scenario.title }}</span>
+              {% if item.scenario.category %}<span class="ml-2 text-xs text-gray-500">{{ item.scenario.category }}</span>{% endif %}
+              <span class="ml-2 text-xs text-gray-600">rev {{ item.revision.revision }}</span>
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <button onclick="document.getElementById('edit-scenario-{{ item.scenario.id }}').style.display='block'" class="text-xs text-gray-500 hover:text-accent">✎</button>
+              <form method="post" action="{% url 'scenario_delete' item.scenario.id %}" onsubmit="return confirm('Delete scenario?')">
+                {% csrf_token %}
+                <input type="hidden" name="set_id" value="{{ selected.id }}">
+                <button class="text-xs text-gray-600 hover:text-red-400">✕</button>
+              </form>
+            </div>
           </div>
-          <form method="post" action="{% url 'scenario_delete' item.scenario.id %}" onsubmit="return confirm('Delete?')">
-            {% csrf_token %}
-            <input type="hidden" name="set_id" value="{{ selected.id }}">
-            <button class="text-xs text-gray-600 hover:text-red-400">✕</button>
-          </form>
+          <!-- Description preview -->
+          <div class="px-3 pb-2 text-xs text-gray-500 line-clamp-2">{{ item.revision.description|truncatechars:200 }}</div>
+
+          <!-- Inline edit form (hidden by default) -->
+          <div id="edit-scenario-{{ item.scenario.id }}" style="display:none" class="px-3 pb-3 pt-2 border-t border-gray-800 space-y-2">
+            <form method="post" action="{% url 'scenario_edit' item.scenario.id %}" class="space-y-2">
+              {% csrf_token %}
+              <input type="hidden" name="set_id" value="{{ selected.id }}">
+              <div class="grid grid-cols-2 gap-2">
+                <input type="text" name="title" value="{{ item.scenario.title }}" required
+                       class="px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">
+                <input type="text" name="category" value="{{ item.scenario.category }}" placeholder="Category"
+                       class="px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">
+              </div>
+              <textarea name="description" rows="3" class="w-full px-2 py-1.5 rounded bg-surface-overlay border border-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-accent/50">{{ item.revision.description }}</textarea>
+              <div class="flex gap-2">
+                <button class="px-3 py-1 rounded bg-accent text-white text-xs">Save</button>
+                <button type="button" onclick="document.getElementById('edit-scenario-{{ item.scenario.id }}').style.display='none'" class="px-3 py-1 rounded bg-surface-overlay text-gray-400 text-xs">Cancel</button>
+              </div>
+            </form>
+          </div>
         </div>
         {% empty %}
-        <p class="text-sm text-gray-500 py-2">No scenarios in this set.</p>
+        <p class="text-sm text-gray-500 py-2">No scenarios in this version.</p>
         {% endfor %}
       </div>
 
       <!-- Add scenario form -->
-      <form method="post" action="{% url 'scenario_create' %}" class="space-y-3 pt-3 border-t border-gray-800">
+      <form method="post" action="{% url 'scenario_create' %}" class="space-y-2 pt-3 border-t border-gray-800">
         {% csrf_token %}
         <input type="hidden" name="set_id" value="{{ selected.id }}">
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-2 gap-2">
           <input type="text" name="name" placeholder="Scenario name" required
                  class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
           <input type="text" name="category" placeholder="Category (optional)"
@@ -74,4 +137,29 @@
     {% endif %}
   </div>
 </div>
+
+<!-- Edit set modal -->
+{% if selected %}
+<div id="edit-set-modal" style="display:none" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+  <div class="bg-surface-raised rounded-xl border border-gray-700 p-5 w-96 max-w-full mx-4">
+    <h3 class="text-sm font-semibold text-gray-200 mb-3">Edit Scenario Set</h3>
+    <form method="post" action="{% url 'scenario_set_rename' selected.id %}" class="space-y-3">
+      {% csrf_token %}
+      <div>
+        <label class="text-xs text-gray-500 block mb-1">Name</label>
+        <input type="text" name="name" value="{{ selected.name }}" required
+               class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+      </div>
+      <div>
+        <label class="text-xs text-gray-500 block mb-1">Description</label>
+        <textarea name="description" rows="2" class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">{{ selected.description }}</textarea>
+      </div>
+      <div class="flex gap-2 justify-end">
+        <button type="button" onclick="document.getElementById('edit-set-modal').style.display='none'" class="px-3 py-1.5 rounded-lg bg-surface-overlay text-gray-400 text-xs">Cancel</button>
+        <button class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}

@@ -142,9 +142,8 @@ class NewAuditView(ProjectMixin, TemplateView):
             gen_config_override = None
             gen_json_raw = (request.POST.get("gen_config_json") or "").strip()
             if gen_json_raw:
-                import json as _json
                 try:
-                    parsed = _json.loads(gen_json_raw)
+                    parsed = json.loads(gen_json_raw)
                     if not isinstance(parsed, dict):
                         raise ValueError("Must be a JSON object")
                     gen_config_override = parsed
@@ -199,14 +198,99 @@ class ScenariosView(ProjectMixin, TemplateView):
         sets = ScenarioSet.objects.filter(project=p).prefetch_related("versions__items__scenario").order_by("name")
         selected = None
         items = []
+        versions = []
+        viewing_version = None
         if self.request.GET.get("set"):
             selected = ScenarioSet.objects.filter(pk=self.request.GET["set"], project=p).first()
             if selected:
-                latest = selected.versions.order_by("-version").first()
-                if latest:
-                    items = list(latest.items.select_related("scenario", "revision"))
-        kw.update(sets=sets, selected=selected, items=items)
+                versions = list(selected.versions.order_by("-version"))
+                # Check if a specific version is being viewed
+                ver_param = self.request.GET.get("version")
+                if ver_param and ver_param.isdigit():
+                    viewing_version = selected.versions.filter(version=int(ver_param)).first()
+                if not viewing_version and versions:
+                    viewing_version = versions[0]
+                if viewing_version:
+                    items = list(viewing_version.items.select_related("scenario", "revision"))
+                    # For the latest version, hide archived scenarios (they're still in historical versions)
+                    if viewing_version == versions[0]:
+                        items = [i for i in items if i.scenario.archived_at is None]
+        kw.update(sets=sets, selected=selected, items=items, versions=versions, viewing_version=viewing_version)
         return super().get_context_data(**kw)
+
+
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _create_revision(scenario, description: str, user) -> ScenarioRevision:
+    """Create the next revision for a scenario."""
+    rev = scenario.revisions.count() + 1
+    return ScenarioRevision.objects.create(
+        scenario=scenario, revision=rev, description=description,
+        expected_behavior=[], content_hash=_content_hash(description),
+        created_by=user,
+    )
+
+
+def _scenario_redirect(set_id: str | None):
+    return redirect(f"/scenarios/?set={set_id}" if set_id else "/scenarios/")
+
+
+def _publish_new_version(sset, user, extra_scenario_ids=None):
+    """Auto-publish a new version capturing all current (non-archived) scenarios in the set."""
+    latest = sset.versions.order_by("-version").first()
+    if latest:
+        scenario_ids = list(latest.items.values_list("scenario_id", flat=True))
+    else:
+        scenario_ids = []
+    if extra_scenario_ids:
+        for sid in extra_scenario_ids:
+            if sid not in scenario_ids:
+                scenario_ids.append(sid)
+    # Exclude archived scenarios
+    archived_ids = set(Scenario.objects.filter(id__in=scenario_ids, archived_at__isnull=False).values_list("id", flat=True))
+    scenario_ids = [sid for sid in scenario_ids if sid not in archived_ids]
+    if scenario_ids:
+        publish_scenario_set_version(scenario_set=sset, user=user, scenario_ids=scenario_ids)
+
+
+class ScenarioSetCreateView(ProjectMixin, View):
+    def post(self, request):
+        name = request.POST.get("name", "").strip()
+        desc = request.POST.get("description", "").strip()
+        if name:
+            ScenarioSet.objects.create(
+                project=request.project, name=name, description=desc, created_by=request.user,
+            )
+            messages.success(request, f"Scenario set '{name}' created.")
+        return redirect("/scenarios/")
+
+
+class ScenarioSetRenameView(ProjectMixin, View):
+    def post(self, request, set_id):
+        sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+        if sset:
+            name = request.POST.get("name", "").strip()
+            desc = request.POST.get("description", "").strip()
+            if name:
+                sset.name = name
+            sset.description = desc
+            sset.save()
+            messages.success(request, "Scenario set updated.")
+        return redirect(f"/scenarios/?set={set_id}")
+
+
+class ScenarioSetDeleteView(ProjectMixin, View):
+    def post(self, request, set_id):
+        sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+        if sset:
+            try:
+                sset.delete()
+                messages.success(request, "Scenario set deleted.")
+            except Exception:
+                messages.error(request, "Cannot delete: this set is referenced by audit runs.")
+        return redirect("/scenarios/")
 
 
 class ScenarioCreateView(ProjectMixin, View):
@@ -216,48 +300,76 @@ class ScenarioCreateView(ProjectMixin, View):
         desc = request.POST.get("description", "")
         set_id = request.POST.get("set_id", "").strip()
         if name:
-            # Derive a stable key from the name
             key = hashlib.sha256(name.encode()).hexdigest()[:12]
-            scenario, _ = Scenario.objects.get_or_create(
+            scenario, created = Scenario.objects.get_or_create(
                 project=request.project, key=key,
                 defaults={"title": name, "category": category},
             )
-            ScenarioRevision.objects.create(
-                scenario=scenario, revision=1, description=desc,
-                expected_behavior=[], content_hash=hashlib.sha256(desc.encode()).hexdigest(),
-                created_by=request.user,
-            )
+            _create_revision(scenario, desc, request.user)
+            # Auto-publish new version including this scenario
+            if set_id:
+                sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+                if sset:
+                    _publish_new_version(sset, request.user, extra_scenario_ids=[scenario.id])
             messages.success(request, f"Scenario '{name}' added.")
-        if set_id:
-            return redirect(f"/scenarios/?set={set_id}")
-        return redirect("/scenarios/")
+        return _scenario_redirect(set_id or None)
+
+
+class ScenarioEditView(ProjectMixin, View):
+    def post(self, request, scenario_id):
+        scenario = Scenario.objects.filter(pk=scenario_id, project=request.project).first()
+        set_id = request.POST.get("set_id", "").strip()
+        if scenario:
+            title = request.POST.get("title", "").strip()
+            category = request.POST.get("category", "").strip()
+            desc = request.POST.get("description", "")
+            if title:
+                scenario.title = title
+            scenario.category = category
+            scenario.save()
+            _create_revision(scenario, desc, request.user)
+            # Auto-publish new version
+            if set_id:
+                sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+                if sset:
+                    _publish_new_version(sset, request.user)
+            messages.success(request, f"Scenario '{scenario.title}' updated.")
+        return _scenario_redirect(set_id or None)
 
 
 class ScenarioDeleteView(ProjectMixin, View):
     def post(self, request, scenario_id):
-        Scenario.objects.filter(pk=scenario_id, project=request.project).delete()
-        set_id = request.POST.get("set_id", "")
-        if set_id:
-            return redirect(f"/scenarios/?set={set_id}")
-        return redirect("/scenarios/")
+        set_id = request.POST.get("set_id", "").strip()
+        scenario = Scenario.objects.filter(pk=scenario_id, project=request.project).first()
+        if scenario:
+            # Archive instead of delete (preserves historical versions)
+            scenario.archived_at = timezone.now()
+            scenario.save()
+            # Publish new version excluding archived scenarios
+            if set_id:
+                sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
+                if sset:
+                    _publish_new_version(sset, request.user)
+        return _scenario_redirect(set_id or None)
 
 
-class ScenarioPublishView(ProjectMixin, View):
+class ScenarioRevertView(ProjectMixin, View):
+    """Revert a scenario set to an old version by publishing it as a new version."""
     def post(self, request, set_id):
         sset = ScenarioSet.objects.filter(pk=set_id, project=request.project).first()
         if not sset:
             return redirect("/scenarios/")
-        scenario_ids = list(
-            ScenarioSetVersionItem.objects.filter(version__scenario_set=sset)
-            .values_list("scenario_id", flat=True).distinct()
-        )
-        # If no items yet, use all project scenarios
-        if not scenario_ids:
-            scenario_ids = list(Scenario.objects.filter(project=request.project).values_list("id", flat=True))
-        try:
-            publish_scenario_set_version(scenario_set=sset, user=request.user, scenario_ids=scenario_ids)
-        except Exception:
-            messages.error(request, "Failed to publish version.")
+        target_ver = int(request.POST.get("target_version", 0))
+        old_version = sset.versions.filter(version=target_ver).first()
+        if old_version:
+            scenario_ids = list(old_version.items.values_list("scenario_id", flat=True))
+            if scenario_ids:
+                publish_scenario_set_version(scenario_set=sset, user=request.user, scenario_ids=scenario_ids)
+                messages.success(request, f"Reverted to v{target_ver} (published as new version).")
+            else:
+                messages.error(request, "Old version has no scenarios.")
+        else:
+            messages.error(request, "Version not found.")
         return redirect(f"/scenarios/?set={set_id}")
 
 
@@ -282,19 +394,17 @@ class ScenarioImportView(ProjectMixin, View):
             return JsonResponse({"error": "Not found"}, status=404)
         try:
             data = json.loads(request.body)
+            new_ids = []
             for item in data.get("scenarios", []):
                 key = item.get("key", f"imported_{int(timezone.now().timestamp())}")
                 scenario, _ = Scenario.objects.get_or_create(
                     project=request.project, key=key,
                     defaults={"title": item.get("title", "Imported"), "category": item.get("category", "")},
                 )
-                desc = item.get("description", "")
-                ScenarioRevision.objects.create(
-                    scenario=scenario, revision=scenario.revisions.count() + 1,
-                    description=desc, expected_behavior=[],
-                    content_hash=hashlib.sha256(desc.encode()).hexdigest(),
-                    created_by=request.user,
-                )
+                _create_revision(scenario, item.get("description", ""), request.user)
+                new_ids.append(scenario.id)
+            # Auto-publish after import (include newly imported scenarios)
+            _publish_new_version(sset, request.user, extra_scenario_ids=new_ids)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
         return redirect(f"/scenarios/?set={set_id}")
