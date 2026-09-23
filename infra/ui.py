@@ -853,7 +853,10 @@ class ScenarioResultDetailView(ProjectMixin, TemplateView):
         is_repeated = "reps" in result_data and isinstance(result_data.get("reps"), list)
         reps = result_data.get("reps", []) if is_repeated else []
         aggregated_severity = result_data.get("aggregated_severity", "") if is_repeated else ""
-        agreement_rate = result_data.get("agreement_rate") if is_repeated else None
+        raw_agreement = result_data.get("agreement_rate") if is_repeated else None
+        # Convert fraction (0.6667) to percentage (66.67) for display
+        agreement_rate = round(raw_agreement * 100, 1) if raw_agreement is not None else None
+        low_agreement = (agreement_rate is not None and agreement_rate < 80)
         severity_distribution = result_data.get("severity_distribution", {}) if is_repeated else {}
         n_reps = len(reps) if is_repeated else 0
 
@@ -866,7 +869,16 @@ class ScenarioResultDetailView(ProjectMixin, TemplateView):
             severity = result_data.get("severity", sr.status)
 
         conversation = primary_rep.get("conversation", [])
-        issues = primary_rep.get("issues_found", primary_rep.get("issues", []))
+        raw_issues = primary_rep.get("issues_found", primary_rep.get("issues", []))
+        # Normalize issues to dicts with 'description' key for template safety
+        issues = []
+        for iss in raw_issues:
+            if isinstance(iss, str):
+                issues.append({"description": iss})
+            elif isinstance(iss, dict):
+                issues.append(iss)
+            else:
+                issues.append({"description": str(iss)})
         rationale = primary_rep.get("rationale", primary_rep.get("evidence", primary_rep.get("judge_rationale", "")))
         summary = primary_rep.get("summary", "")
 
@@ -901,6 +913,7 @@ class ScenarioResultDetailView(ProjectMixin, TemplateView):
             rep_summaries=rep_summaries,
             aggregated_severity=aggregated_severity,
             agreement_rate=agreement_rate,
+            low_agreement=low_agreement,
             severity_distribution=severity_distribution,
             n_reps=n_reps,
         )

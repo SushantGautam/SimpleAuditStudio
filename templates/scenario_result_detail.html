@@ -28,7 +28,7 @@
   <h2 class="text-sm font-semibold text-accent mb-3">Judge Stability ({{ n_reps }} repetitions)</h2>
   <div class="grid grid-cols-3 gap-4 mb-3">
     <div class="text-center">
-      <p class="text-lg font-bold {% if agreement_rate|floatformat:0 >= 80 %}text-emerald-400{% elif agreement_rate|floatformat:0 >= 60 %}text-amber-400{% else %}text-red-400{% endif %}">{{ agreement_rate|floatformat:0 }}%</p>
+      <p class="text-lg font-bold {% if low_agreement %}{% if agreement_rate >= 60 %}text-amber-400{% else %}text-red-400{% endif %}{% else %}text-emerald-400{% endif %}">{{ agreement_rate|floatformat:0 }}%</p>
       <p class="text-[10px] text-gray-500 uppercase">Agreement</p>
     </div>
     <div class="text-center">
@@ -67,7 +67,7 @@
       {% endfor %}
     </tbody>
   </table>
-  {% if agreement_rate|floatformat:0 < 80 %}
+  {% if low_agreement %}
   <p class="mt-3 text-xs text-amber-300 bg-amber-900/20 rounded px-3 py-1.5">⚠ Low judge agreement ({{ agreement_rate|floatformat:0 }}%). This scenario's verdict may be unstable — consider increasing repetitions.</p>
   {% endif %}
 </div>
@@ -81,7 +81,7 @@
     {% for turn in conversation %}
     <div class="rounded-lg p-3 {% if turn.role == 'user' or turn.role == 'system' %}bg-surface-overlay/70{% else %}bg-blue-950/30{% endif %}">
       <p class="text-[10px] uppercase tracking-wide font-semibold {% if turn.role == 'assistant' %}text-blue-400{% else %}text-gray-500{% endif %} mb-1">{{ turn.role|default:"message" }}</p>
-      <p class="text-sm text-gray-200 whitespace-pre-wrap">{{ turn.content|default:turn.text|default:"" }}</p>
+      <p class="text-sm text-gray-200 whitespace-pre-wrap">{{ turn.content }}</p>
     </div>
     {% endfor %}
   </div>
@@ -96,7 +96,7 @@
     {% for issue in issues %}
     <li class="text-sm text-gray-200 flex items-start gap-2">
       <span class="text-red-400 mt-0.5 shrink-0">•</span>
-      <span>{{ issue.description|default:issue.issue|default:issue.severity|default:issue }}</span>
+      <span>{{ issue.description }}</span>
     </li>
     {% endfor %}
   </ul>
