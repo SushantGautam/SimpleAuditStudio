@@ -132,6 +132,12 @@ class NewAuditView(ProjectMixin, TemplateView):
             version = sset.versions.order_by("-version").first()
             if not version:
                 raise ValueError("No published version for this set.")
+
+            # Parse optional hyperparameter overrides
+            max_turns_raw = (request.POST.get("max_turns") or "").strip()
+            max_turns_override = int(max_turns_raw) if max_turns_raw else None
+            language_override = (request.POST.get("language") or "").strip() or None
+
             run = create_audit_run(
                 project=p,
                 user=request.user,
@@ -141,6 +147,8 @@ class NewAuditView(ProjectMixin, TemplateView):
                 auditor_endpoint=ModelEndpoint.objects.get(pk=request.POST["auditor_endpoint"], project=p),
                 judge_endpoint=ModelEndpoint.objects.get(pk=request.POST["judge_endpoint"], project=p),
                 audit_profile=AuditProfile.objects.filter(pk=request.POST.get("profile"), project=p).first() or None,
+                max_turns_override=max_turns_override,
+                language_override=language_override,
             )
             submit_audit_run(run)
             return redirect(f"/audits/{run.id}/")

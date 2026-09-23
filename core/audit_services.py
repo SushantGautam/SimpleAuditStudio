@@ -31,21 +31,33 @@ def _endpoint_snapshot(endpoint: ModelEndpoint) -> dict:
     }
 
 
-def _generation_parameters(profile: AuditProfile | None) -> dict:
+def _generation_parameters(
+    profile: AuditProfile | None,
+    *,
+    max_turns_override: int | None = None,
+    language_override: str | None = None,
+) -> dict:
     if not profile:
-        return {}
-    return {
-        "max_turns": profile.max_turns,
-        "temperature_target": profile.temperature_target,
-        "temperature_auditor": profile.temperature_auditor,
-        "temperature_judge": profile.temperature_judge,
-        "top_p": profile.top_p,
-        "max_tokens": profile.max_tokens,
-        "retry_policy": profile.retry_policy,
-        "timeout_seconds": profile.timeout_seconds,
-        "concurrency": profile.concurrency,
-        "language": profile.language,
-    }
+        params = {}
+    else:
+        params = {
+            "max_turns": profile.max_turns,
+            "temperature_target": profile.temperature_target,
+            "temperature_auditor": profile.temperature_auditor,
+            "temperature_judge": profile.temperature_judge,
+            "top_p": profile.top_p,
+            "max_tokens": profile.max_tokens,
+            "retry_policy": profile.retry_policy,
+            "timeout_seconds": profile.timeout_seconds,
+            "concurrency": profile.concurrency,
+            "language": profile.language,
+        }
+    # Overrides take precedence over profile values.
+    if max_turns_override is not None:
+        params["max_turns"] = max_turns_override
+    if language_override:
+        params["language"] = language_override
+    return params
 
 
 @transaction.atomic
@@ -61,6 +73,8 @@ def create_audit_run(
     audit_profile: AuditProfile | None = None,
     simpleaudit_version: str | None = None,
     git_commit: str | None = None,
+    max_turns_override: int | None = None,
+    language_override: str | None = None,
 ) -> AuditRun:
     """Create a queued AuditRun with immutable execution inputs.
 
@@ -97,7 +111,11 @@ def create_audit_run(
         target_config_snapshot=_endpoint_snapshot(target_endpoint),
         auditor_config_snapshot=_endpoint_snapshot(auditor_endpoint),
         judge_config_snapshot=_endpoint_snapshot(judge_endpoint),
-        generation_parameters_snapshot=_generation_parameters(audit_profile),
+        generation_parameters_snapshot=_generation_parameters(
+            audit_profile,
+            max_turns_override=max_turns_override,
+            language_override=language_override,
+        ),
         simpleaudit_version=resolved_version,
         git_commit=resolved_commit,
         runtime_metadata={"created_by_username": user.username},

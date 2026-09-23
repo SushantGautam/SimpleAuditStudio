@@ -147,17 +147,15 @@ class EngineIntegrationTest(TestCase):
         ProjectMembership.objects.create(project=self.project, user=self.user, role=ProjectMembership.Role.AUDITOR)
 
     def test_engine_raises_clean_error_when_unavailable(self):
-        from core.engine import EngineError, run_scenario
+        from core.engine import EngineError, _ensure_engine_on_path, run_scenario
 
-        # Ensure no engine on path and no SIMPLEAUDIT_ENGINE_PATH set.
-        with mock.patch.dict("os.environ", {}, clear=False):
-            os_environ_patch = mock.patch.dict("os.environ", {"SIMPLEAUDIT_ENGINE_PATH": ""})
-            with os_environ_patch:
-                with self.assertRaises(EngineError):
-                    run_scenario(
-                        name="dose", description="d", expected_behavior=None, test_prompt=None,
-                        target={}, auditor={}, judge={}, generation={},
-                    )
+        # Force the engine import to fail (covers both pip-installed and path-based).
+        with mock.patch("core.engine._ensure_engine_on_path", side_effect=EngineError("no engine")):
+            with self.assertRaises(EngineError):
+                run_scenario(
+                    name="dose", description="d", expected_behavior=None, test_prompt=None,
+                    target={}, auditor={}, judge={}, generation={},
+                )
 
     def test_worker_records_failed_result_when_engine_missing(self):
         from core import worker
