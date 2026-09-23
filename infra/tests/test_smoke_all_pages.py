@@ -1,0 +1,98 @@
+"""Smoke test: hit every page type, assert zero 5xx errors.
+
+This is the safety net that catches template crashes, missing context vars,
+and view bugs before they reach a user's browser.
+
+Run:
+    SIMPLEAUDIT_LOCAL_SQLITE=1 .venv/bin/python manage.py test infra.tests.test_smoke_all_pages
+"""
+from django.test import TestCase, Client
+
+from infra.tests.factories import (
+    UserFactory, ProjectFactory, MembershipFactory,
+    AuditRunFactory, ScenarioResultFactory, RepeatedScenarioResultFactory,
+    ScenarioSetFactory, ScenarioSetVersionFactory, ScenarioFactory,
+    ScenarioRevisionFactory, ScenarioSetVersionItemFactory, ModelEndpointFactory,
+)
+
+
+class AllPagesSmokeTest(TestCase):
+    """Visit every major page and assert no server errors."""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.user.set_password("testpass123")
+        self.user.save()
+        self.project = ProjectFactory()
+        MembershipFactory(user=self.user, project=self.project, role="owner")
+
+        # Scenario set with 2 versions (needed for diff view)
+        sset = ScenarioSetFactory(project=self.project)
+        scenario = ScenarioFactory(project=self.project)
+        rev = ScenarioRevisionFactory(scenario=scenario)
+        v1 = ScenarioSetVersionFactory(scenario_set=sset, version=1)
+        v2 = ScenarioSetVersionFactory(scenario_set=sset, version=2)
+        ScenarioSetVersionItemFactory(version=v1, scenario=scenario, revision=rev, position=1)
+        item_v2 = ScenarioSetVersionItemFactory(version=v2, scenario=scenario, revision=rev, position=1)
+        self.scenario_set = sset
+
+        # Single-rep run
+        endpoint = ModelEndpointFactory(project=self.project)
+        self.run = AuditRunFactory(
+            project=self.project,
+            scenario_set_version=v2,
+            target_endpoint=endpoint,
+            auditor_endpoint=endpoint,
+            judge_endpoint=endpoint,
+        )
+        self.result = ScenarioResultFactory(run_id=self.run.pk, version_item_id=str(item_v2.pk))
+
+        # Repeated run (n_repetitions=3)
+        self.run_repeated = AuditRunFactory(
+            project=self.project,
+            scenario_set_version=v2,
+            target_endpoint=endpoint,
+            auditor_endpoint=endpoint,
+            judge_endpoint=endpoint,
+        )
+        self.result_repeated = RepeatedScenarioResultFactory(run_id=self.run_repeated.pk, version_item_id=str(item_v2.pk))
+
+        # Authenticated client
+        self.client = Client(SERVER_NAME="localhost")
+        self.client.login(username=self.user.username, password="testpass123")
+        self.client.session["project_id"] = self.project.pk
+        self.client.session.save()
+
+    def _ok(self, url, label):
+        resp = self.client.get(url)
+        self.assertLess(
+            resp.status_code, 500,
+            f"Server error ({resp.status_code}) on {label}: {url}\n{resp.content[:500]}",
+        )
+
+    def test_main_pages(self):
+        self._ok("/queue/", "Queue")
+        self._ok("/scenarios/", "Scenario Library")
+        self._ok("/models/", "Models")
+
+    def test_audit_detail(self):
+        self._ok(f"/audits/{self.run.id}/", "Audit detail (single)")
+        self._ok(f"/audits/{self.run_repeated.id}/", "Audit detail (repeated)")
+
+    def test_audit_exports(self):
+        self._ok(f"/audits/{self.run.id}/export/?format=json", "Export JSON")
+        self._ok(f"/audits/{self.run.id}/export/?format=csv", "Export CSV")
+        self._ok(f"/audits/{self.run_repeated.id}/export/?format=json", "Export JSON (repeated)")
+
+    def test_scenario_result_detail(self):
+        self._ok(f"/audits/{self.run.id}/results/{self.result.id}/", "Result detail (single)")
+        self._ok(f"/audits/{self.run_repeated.id}/results/{self.result_repeated.id}/", "Result detail (repeated)")
+
+    def test_compare(self):
+        self._ok(f"/compare/?a={self.run.id}&b={self.run_repeated.id}", "Compare")
+
+    def test_scenario_diff(self):
+        self._ok(f"/scenarios/diff/{self.scenario_set.id}/", "Scenario diff")
+
+    def test_new_audit_form(self):
+        self._ok("/new-audit/", "New Audit form")
