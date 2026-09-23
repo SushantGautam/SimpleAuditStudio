@@ -172,3 +172,45 @@ class APIE2ETest(APITestCase):
     def test_compare_rejects_unknown_run(self):
         resp = self.client.get(f"/api/projects/{self.pid}/audit-runs/compare/?run_ids=1,99999")
         self.assertEqual(resp.status_code, 409)
+
+    def _make_queued_run(self, name="Cancel Test Run"):
+        """Create a minimal queued run for cancel testing."""
+        # Scenario + set + version
+        resp = self.client.post(f"/api/projects/{self.pid}/scenarios/create/", {
+            "key": f"cancel-{name.lower().replace(' ', '-')}", "title": name,
+            "description": "d", "expected_behavior": ["x"], "test_prompt": "p",
+        }, format="json")
+        sid = resp.json()["id"]
+        resp = self.client.post(f"/api/projects/{self.pid}/scenario-sets/create/", {"name": f"Set {name}"}, format="json")
+        set_id = resp.json()["id"]
+        resp = self.client.post(f"/api/projects/{self.pid}/scenario-sets/{set_id}/publish/", {"scenario_ids": [sid]}, format="json")
+        ver_id = resp.json()["id"]
+        # Endpoints
+        ep = {"display_name": "T", "provider": "openai", "base_url": "http://m/v1", "model_id": "m", "secret_reference": ""}
+        r1 = self.client.post(f"/api/projects/{self.pid}/model-endpoints/create/", ep, format="json").json()
+        r2 = self.client.post(f"/api/projects/{self.pid}/model-endpoints/create/", {**ep, "display_name": "J"}, format="json").json()
+        # Run
+        resp = self.client.post(f"/api/projects/{self.pid}/audit-runs/create/", {
+            "name": name, "scenario_set_version_id": ver_id,
+            "target_endpoint_id": r1["id"], "auditor_endpoint_id": r1["id"], "judge_endpoint_id": r2["id"],
+        }, format="json")
+        assert resp.status_code == 201
+        return resp.json()["id"]
+
+    def test_cancel_queued_run(self):
+        run_id = self._make_queued_run()
+        resp = self.client.post(f"/api/projects/{self.pid}/audit-runs/{run_id}/cancel/")
+        assert resp.status_code == 200, f"Cancel failed: {resp.status_code} {resp.content}"
+        self.assertEqual(resp.json()["status"], "cancelled")
+
+    def test_cancel_terminal_run_returns_409(self):
+        run_id = self._make_queued_run("Terminal Run")
+        # Cancel it first
+        self.client.post(f"/api/projects/{self.pid}/audit-runs/{run_id}/cancel/")
+        # Try again — should be 409
+        resp = self.client.post(f"/api/projects/{self.pid}/audit-runs/{run_id}/cancel/")
+        self.assertEqual(resp.status_code, 409)
+
+    def test_cancel_unknown_run_returns_404(self):
+        resp = self.client.post(f"/api/projects/{self.pid}/audit-runs/99999/cancel/")
+        self.assertEqual(resp.status_code, 404)

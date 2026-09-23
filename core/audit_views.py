@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 
 from django.http import StreamingHttpResponse
@@ -12,10 +13,13 @@ from .audit_models import AuditRun
 from .audit_serializers import AuditRunCreateSerializer, AuditRunSerializer
 from .audit_services import create_audit_run, submit_audit_run
 from .exceptions import StableAPIError
+from .middleware import set_correlation_context
 from .model_registry_models import AuditProfile, ModelEndpoint
 from .models import Project
 from .scenario_models import ScenarioSetVersion
 from .services import ensure_project_access
+
+logger = logging.getLogger("simpleaudit.audit")
 
 # Terminal event kinds: once one of these is seen for the run, the stream can end.
 _TERMINAL_EVENT_KINDS = {"run_completed", "run_failed", "run_cancelled"}
@@ -47,6 +51,7 @@ def list_audit_runs(request, project_id):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_audit_run(request, project_id, run_id):
+    set_correlation_context(audit_run_id=run_id)
     project = _get_project_or_404(project_id)
     _require_project_access(request.user, project)
     queryset = AuditRun.objects.filter(id=run_id, project=project).select_related(
@@ -68,6 +73,7 @@ def list_audit_run_results(request, project_id, run_id):
     attempts, full structured result) plus the scenario identity from the frozen
     ``ScenarioSetVersionItem`` so the UI can label rows without re-deriving them.
     """
+    set_correlation_context(audit_run_id=run_id)
     project = _get_project_or_404(project_id)
     _require_project_access(request.user, project)
     queryset = AuditRun.objects.filter(id=run_id, project=project)
@@ -139,6 +145,36 @@ def create_audit_run_view(request, project_id):
     run.refresh_from_db()
     return Response(AuditRunSerializer(run).data, status=status.HTTP_201_CREATED)
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cancel_audit_run(request, project_id, run_id):
+    """Request cancellation of an active audit run.
+
+    Sets the durable CANCELLED flag on the run row. The worker observes this
+    flag between scenario executions and skips remaining scenarios. Already-
+    completed scenarios are unaffected. Idempotent: cancelling a terminal run
+    is a no-op.
+    """
+    set_correlation_context(audit_run_id=run_id)
+    project = _get_project_or_404(project_id)
+    _require_project_access(request.user, project)
+    queryset = AuditRun.objects.filter(id=run_id, project=project)
+    try:
+        run = queryset.get()
+    except AuditRun.DoesNotExist as exc:
+        raise StableAPIError(detail="Audit run not found.", code="audit_run_not_found", http_status=404) from exc
+
+    if run.status in (AuditRun.Status.COMPLETED, AuditRun.Status.FAILED, AuditRun.Status.CANCELLED):
+        raise StableAPIError(
+            detail=f"Run is already {run.status}; cannot cancel.",
+            code="run_already_terminal",
+            http_status=409,
+        )
+
+    run.status = AuditRun.Status.CANCELLED
+    run.save(update_fields=["status"])
+    logger.info("Audit run %s cancellation requested by user %s", run.id, request.user.username)
+    return Response(AuditRunSerializer(run).data)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -151,6 +187,7 @@ def poll_audit_run_events(request, project_id, run_id):
     client's cursor, so it is reconnect-safe and cheap. The client stops polling
     once it observes a terminal run event.
     """
+    set_correlation_context(audit_run_id=run_id)
     project = _get_project_or_404(project_id)
     _require_project_access(request.user, project)
     queryset = AuditRun.objects.filter(id=run_id, project=project)
@@ -179,6 +216,7 @@ def stream_audit_run_events(request, project_id, run_id):
     with a higher id — standard SSE replay semantics. The stream ends when a
     terminal run event (completed/failed/cancelled) is observed.
     """
+    set_correlation_context(audit_run_id=run_id)
     project = _get_project_or_404(project_id)
     _require_project_access(request.user, project)
     queryset = AuditRun.objects.filter(id=run_id, project=project)

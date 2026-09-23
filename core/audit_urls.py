@@ -7,6 +7,11 @@ urlpatterns = [
     path("projects/<int:project_id>/audit-runs/create/", audit_views.create_audit_run_view, name="audit-run-create"),
     path("projects/<int:project_id>/audit-runs/<int:run_id>/", audit_views.get_audit_run, name="audit-run-detail"),
     path(
+        "projects/<int:project_id>/audit-runs/<int:run_id>/cancel/",
+        audit_views.cancel_audit_run,
+        name="audit-run-cancel",
+    ),
+    path(
         "projects/<int:project_id>/audit-runs/<int:run_id>/results/",
         audit_views.list_audit_run_results,
         name="audit-run-results",
