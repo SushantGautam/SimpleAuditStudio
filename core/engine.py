@@ -164,6 +164,11 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
     # Generation parameters come from the frozen audit profile snapshot.
     max_turns = int(gen.get("max_turns") or 5)
     language = gen.get("language") or "English"
+    max_retries = int(gen.get("max_retries") or 2)
+    retry_backoff = float(gen.get("retry_backoff") or 0.5)
+    system_prompt = gen.get("system_prompt") or None
+    probe_prompt = gen.get("probe_prompt") or None
+    judge_prompt = gen.get("judge_prompt") or None
 
     # The engine forwards target/auditor/judge kwargs VERBATIM to the provider
     # client CONSTRUCTOR (AnyLLM.create), and its per-turn chat calls accept no
@@ -173,10 +178,17 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
     # a small allowlist of safe client options and drop everything else.
     _CLIENT_KWARG_ALLOWLIST = {"timeout", "max_retries", "default_headers"}
 
-    def _role_kwargs(cfg: dict[str, Any]) -> dict[str, Any] | None:
-        raw = cfg.get("kwargs") or {}
+    def _role_kwargs(cfg: dict[str, Any], gen_override: dict | None = None) -> dict[str, Any] | None:
+        raw = dict(cfg.get("kwargs") or {})
+        if gen_override:
+            raw.update(gen_override)
         filtered = {k: v for k, v in raw.items() if k in _CLIENT_KWARG_ALLOWLIST}
         return filtered or None
+
+    # Extract per-role kwargs overrides from generation config
+    target_gen_kwargs = gen.get("target_kwargs") or None
+    auditor_gen_kwargs = gen.get("auditor_kwargs") or None
+    judge_gen_kwargs = gen.get("judge_kwargs") or None
 
     try:
         instance = ModelAuditor(
@@ -184,18 +196,23 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
             provider=target_cfg["provider"],
             base_url=target_cfg["base_url"],
             api_key=target_cfg["api_key"],
-            target_kwargs=_role_kwargs(target_cfg),
+            target_kwargs=_role_kwargs(target_cfg, target_gen_kwargs),
             auditor_model=auditor_cfg["model"],
             auditor_provider=auditor_cfg["provider"],
             auditor_base_url=auditor_cfg["base_url"],
             auditor_api_key=auditor_cfg["api_key"],
-            auditor_kwargs=_role_kwargs(auditor_cfg),
+            auditor_kwargs=_role_kwargs(auditor_cfg, auditor_gen_kwargs),
             judge_model=judge_cfg["model"],
             judge_provider=judge_cfg["provider"],
             judge_base_url=judge_cfg["base_url"],
             judge_api_key=judge_cfg["api_key"],
-            judge_kwargs=_role_kwargs(judge_cfg),
+            judge_kwargs=_role_kwargs(judge_cfg, judge_gen_kwargs),
             max_turns=max_turns,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            system_prompt=system_prompt,
+            probe_prompt=probe_prompt,
+            judge_prompt=judge_prompt,
             show_progress=False,
             verbose=False,
         )

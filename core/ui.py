@@ -138,6 +138,19 @@ class NewAuditView(ProjectMixin, TemplateView):
             max_turns_override = int(max_turns_raw) if max_turns_raw else None
             language_override = (request.POST.get("language") or "").strip() or None
 
+            # Parse optional generation config JSON override
+            gen_config_override = None
+            gen_json_raw = (request.POST.get("gen_config_json") or "").strip()
+            if gen_json_raw:
+                import json as _json
+                try:
+                    parsed = _json.loads(gen_json_raw)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("Must be a JSON object")
+                    gen_config_override = parsed
+                except Exception as e:
+                    return self.render_to_response(self.get_context_data(error=f"Invalid generation config JSON: {e}"))
+
             run = create_audit_run(
                 project=p,
                 user=request.user,
@@ -149,6 +162,7 @@ class NewAuditView(ProjectMixin, TemplateView):
                 audit_profile=AuditProfile.objects.filter(pk=request.POST.get("profile"), project=p).first() or None,
                 max_turns_override=max_turns_override,
                 language_override=language_override,
+                gen_config_override=gen_config_override,
             )
             submit_audit_run(run)
             return redirect(f"/audits/{run.id}/")

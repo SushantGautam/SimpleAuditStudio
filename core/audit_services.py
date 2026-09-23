@@ -37,6 +37,7 @@ def _generation_parameters(
     *,
     max_turns_override: int | None = None,
     language_override: str | None = None,
+    gen_config_override: dict | None = None,
 ) -> dict:
     if not profile:
         params = {}
@@ -58,6 +59,9 @@ def _generation_parameters(
         params["max_turns"] = max_turns_override
     if language_override:
         params["language"] = language_override
+    # Raw JSON override merges last (highest priority).
+    if gen_config_override:
+        params.update(gen_config_override)
     return params
 
 
@@ -76,6 +80,7 @@ def create_audit_run(
     git_commit: str | None = None,
     max_turns_override: int | None = None,
     language_override: str | None = None,
+    gen_config_override: dict | None = None,
 ) -> AuditRun:
     """Create a queued AuditRun with immutable execution inputs.
 
@@ -116,6 +121,7 @@ def create_audit_run(
             audit_profile,
             max_turns_override=max_turns_override,
             language_override=language_override,
+            gen_config_override=gen_config_override,
         ),
         simpleaudit_version=resolved_version,
         git_commit=resolved_commit,
