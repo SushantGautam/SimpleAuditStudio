@@ -397,16 +397,25 @@ def run_scenario_repeated(
     # but we want to be explicit).
     model_entry = {k: v for k, v in model_entry.items() if v is not None}
 
-    # Track rep completions via callback
+    # Track rep completions via callback.
+    # NOTE: The engine's on_rep_done receives an AuditResults collection
+    # (one per rep). For single-scenario execution it always contains exactly
+    # one AuditResult. We extract that single result for the platform's
+    # per-rep storage format.
     reps: list[dict[str, Any]] = []
 
     def _on_rep_done(label: str, rep_index: int, total: int, result) -> None:
-        if result is not None:
-            payload = result.to_dict()
-            payload["_rep_index"] = rep_index
-            reps.append(payload)
-            if on_rep_done:
-                on_rep_done(rep_index, payload)
+        if result is None:
+            return
+        # result is AuditResults (collection); extract the single scenario result
+        single = result[0] if hasattr(result, '__getitem__') and len(result) > 0 else None
+        if single is None:
+            return
+        payload = single.to_dict()
+        payload["_rep_index"] = rep_index
+        reps.append(payload)
+        if on_rep_done:
+            on_rep_done(rep_index, payload)
 
     try:
         experiment = AuditExperiment(
