@@ -63,3 +63,26 @@ def set_correlation_context(**fields):
 def clear_correlation_context():
     """Clear correlation fields (call in finally/teardown)."""
     CorrelationLogFilter.clear_context()
+
+class ProjectMiddleware(MiddlewareMixin):
+    """Attaches the user's active project to the request.
+
+    Uses the session key ``active_project_id`` if set, otherwise falls back
+    to the user's first project. This lets UI views access ``request.project``
+    without requiring a URL parameter.
+    """
+
+    def process_request(self, request):
+        request.project = None
+        if not hasattr(request, "user") or not request.user.is_authenticated:
+            return
+        from .models import Project
+
+        project_id = request.session.get("active_project_id")
+        if project_id:
+            request.project = Project.objects.filter(pk=project_id).first()
+        if not request.project:
+            membership = request.user.memberships.select_related("project").first()
+            if membership:
+                request.project = membership.project
+                request.session["active_project_id"] = request.project.id

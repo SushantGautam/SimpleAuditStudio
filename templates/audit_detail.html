@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Audit #{{ run.id }} — SimpleAudit{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="{% url 'dashboard' %}" class="text-xs text-gray-500 hover:text-accent">← Back</a>
+</div>
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-lg font-semibold text-gray-100">Audit #{{ run.id }}</h1>
+  {% if run.status == "queued" or run.status == "preparing" or run.status == "target_execution" or run.status == "auditing" or run.status == "judging" or run.status == "aggregation" %}
+  <form method="post" action="{% url 'audit_cancel' run.id %}">
+    {% csrf_token %}
+    <button class="px-3 py-1.5 rounded-lg bg-red-900/50 text-red-300 text-xs font-medium hover:bg-red-800/60">Cancel</button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- Status + Manifest -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3">Status</h2>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">State</span>
+        {% if run.status == "completed" %}<span class="text-emerald-400 font-medium">completed</span>
+        {% elif run.status == "failed" %}<span class="text-red-400 font-medium">failed</span>
+        {% else %}<span class="text-amber-400 font-medium">{{ run.get_status_display }}</span>{% endif %}
+      </div>
+      <div class="flex justify-between"><span class="text-gray-500">Started</span><span>{{ run.started_at|date:"M j, H:i"|default:"—" }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Finished</span><span>{{ run.completed_at|date:"M j, H:i"|default:"—" }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Scenarios</span><span>{{ run.total_scenarios }} total, {{ run.completed_scenarios }} done</span></div>
+    </div>
+  </div>
+
+  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3">Frozen Manifest</h2>
+    <div class="space-y-1.5 text-xs">
+      <div class="flex justify-between"><span class="text-gray-500">Scenario Set</span><span class="text-gray-300">{{ run.scenario_set_version.scenario_set.name }} v{{ run.scenario_set_version.version_number }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Content Hash</span><span class="text-gray-400 font-mono truncate max-w-[140px]">{{ run.scenario_set_version.content_hash|truncatechars:16 }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Target</span><span class="text-gray-300">{{ run.target_endpoint.name|default:"—" }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Auditor</span><span class="text-gray-300">{{ run.auditor_endpoint.name|default:"—" }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Judge</span><span class="text-gray-300">{{ run.judge_endpoint.name|default:"—" }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Engine</span><span class="text-gray-300">{{ run.simpleaudit_version|default:"—" }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Git Commit</span><span class="text-gray-400 font-mono">{{ run.git_commit|truncatechars:8|default:"—" }}</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Results -->
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Results ({{ results|length }})</h2>
+  {% if results %}
+  <div class="space-y-2 max-h-96 overflow-y-auto">
+    {% for r in results %}
+    <div class="px-3 py-2.5 rounded-lg bg-surface-overlay/50">
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-gray-200">{{ r.scenario_name }}</span>
+        {% if r.severity == "pass" or r.severity == "low" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300">{{ r.severity }}</span>
+        {% elif r.severity == "medium" %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-900/50 text-amber-300">{{ r.severity }}</span>
+        {% else %}<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-300">{{ r.severity }}</span>{% endif %}
+      </div>
+      {% if r.summary %}<p class="text-xs text-gray-500 mt-1 line-clamp-2">{{ r.summary }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-gray-500 py-4 text-center">No results yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Models — SimpleAudit{% endblock %}
+{% block content %}
+<h1 class="text-lg font-semibold text-gray-100 mb-6">Model Registry</h1>
+
+{% if error %}
+<div class="mb-4 text-sm text-red-300 bg-red-900/30 rounded-lg px-4 py-2">{{ error }}</div>
+{% endif %}
+
+<!-- Endpoints -->
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4 mb-6">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Endpoints</h2>
+  {% if endpoints %}
+  <table class="w-full text-sm mb-4">
+    <thead><tr class="border-b border-gray-800">
+      <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Name</th>
+      <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">URL</th>
+      <th class="text-left px-3 py-2 text-xs text-gray-500 uppercase">Model</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for ep in endpoints %}
+      <tr class="border-b border-gray-800/50">
+        <td class="px-3 py-2.5 font-medium text-gray-200">{{ ep.display_name }}</td>
+        <td class="px-3 py-2.5 text-gray-500 text-xs truncate max-w-[200px]">{{ ep.base_url }}</td>
+        <td class="px-3 py-2.5 text-gray-400 text-xs">{{ ep.model_id|default:"—" }}</td>
+        <td class="px-3 py-2.5">
+          <form method="post" action="{% url 'model_delete' ep.id %}" onsubmit="return confirm('Delete?')">
+            {% csrf_token %}
+            <button class="text-xs text-gray-600 hover:text-red-400">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-sm text-gray-500 mb-4">No endpoints registered.</p>
+  {% endif %}
+
+  <!-- Add form -->
+  <form method="post" class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t border-gray-800">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="add_endpoint">
+    <input type="text" name="name" placeholder="Display name" required
+           class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+    <input type="url" name="url" placeholder="http://host:port/v1" required
+           class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+    <input type="text" name="model" placeholder="model-id (optional)"
+           class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+    <button class="px-3 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover">+ Add</button>
+  </form>
+</div>
+
+<!-- Profiles -->
+<div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+  <h2 class="text-sm font-semibold text-gray-300 mb-3">Audit Profiles</h2>
+  {% if profiles %}
+  <div class="flex flex-wrap gap-2">
+    {% for p in profiles %}
+    <span class="px-3 py-1.5 rounded-lg bg-surface-overlay text-sm text-gray-300">{{ p.name }}</span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-gray-500">No audit profiles defined.</p>
+  {% endif %}
+</div>
+{% endblock %}

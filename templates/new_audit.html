@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}New Audit — SimpleAudit{% endblock %}
+{% block content %}
+<h1 class="text-lg font-semibold text-gray-100 mb-6">New Audit</h1>
+
+{% if error %}
+<div class="mb-4 text-sm text-red-300 bg-red-900/30 rounded-lg px-4 py-2">{{ error }}</div>
+{% endif %}
+
+<form method="post" class="space-y-4 max-w-2xl">
+  {% csrf_token %}
+
+  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+    <h3 class="text-sm font-semibold text-gray-300 mb-3">Scenario Set</h3>
+    <label class="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Select set</label>
+    <select name="scenario_set" required class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+      {% for s in sets %}
+      <option value="{{ s.id }}">{{ s.name }} (v{{ s.versions.count }})</option>
+      {% empty %}
+      <option value="">No scenario sets available</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+    <h3 class="text-sm font-semibold text-gray-300 mb-3">Models</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Target</label>
+        <select name="target_endpoint" required class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+          {% for ep in endpoints %}<option value="{{ ep.id }}">{{ ep.display_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Auditor</label>
+        <select name="auditor_endpoint" required class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+          {% for ep in endpoints %}<option value="{{ ep.id }}">{{ ep.display_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Judge</label>
+        <select name="judge_endpoint" required class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+          {% for ep in endpoints %}<option value="{{ ep.id }}">{{ ep.display_name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  {% if profiles %}
+  <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+    <h3 class="text-sm font-semibold text-gray-300 mb-3">Audit Profile (optional)</h3>
+    <select name="profile" class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+      <option value="">None</option>
+      {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  <button type="submit" class="w-full px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors">
+    Launch Audit
+  </button>
+</form>
+{% endblock %}

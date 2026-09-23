@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Scenarios — SimpleAudit{% endblock %}
+{% block content %}
+<h1 class="text-lg font-semibold text-gray-100 mb-6">Scenario Library</h1>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+  <!-- Set list -->
+  <div class="space-y-2">
+    {% for s in sets %}
+    <a href="?set={{ s.id }}"
+       class="block px-4 py-3 rounded-xl border text-sm transition-colors {% if selected and selected.id == s.id %}bg-accent/15 border-accent/30 text-accent{% else %}bg-surface-raised border-gray-800 text-gray-300 hover:border-gray-600{% endif %}">
+      <span class="font-medium">{{ s.name }}</span>
+      <span class="text-xs text-gray-500 ml-2">{{ s.scenarios.count }} scenarios</span>
+    </a>
+    {% empty %}
+    <p class="text-sm text-gray-500">No scenario sets yet.</p>
+    {% endfor %}
+  </div>
+
+  <!-- Detail panel -->
+  <div class="md:col-span-2">
+    {% if selected %}
+    <div class="bg-surface-raised rounded-xl border border-gray-800 p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-gray-200">{{ selected.name }}</h2>
+        <div class="flex gap-2">
+          <a href="{% url 'scenario_export' selected.id %}" class="px-2 py-1 rounded text-xs bg-surface-overlay text-gray-400 hover:text-gray-200">Export</a>
+          <form method="post" action="{% url 'scenario_publish' selected.id %}" class="inline">
+            {% csrf_token %}
+            <button class="px-2 py-1 rounded text-xs bg-accent/20 text-accent hover:bg-accent/30">Publish v{{ selected.versions.count|add:"1" }}</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Scenario list -->
+      <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
+        {% for sc in selected.scenarios.all %}
+        <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-overlay/50">
+          <div class="min-w-0">
+            <span class="text-sm text-gray-200 truncate">{{ sc.name }}</span>
+            {% if sc.category %}<span class="ml-2 text-xs text-gray-500">{{ sc.category }}</span>{% endif %}
+          </div>
+          <form method="post" action="{% url 'scenario_delete' sc.id %}" onsubmit="return confirm('Delete?')">
+            {% csrf_token %}
+            <button class="text-xs text-gray-600 hover:text-red-400">✕</button>
+          </form>
+        </div>
+        {% empty %}
+        <p class="text-sm text-gray-500 py-2">No scenarios in this set.</p>
+        {% endfor %}
+      </div>
+
+      <!-- Add scenario form -->
+      <form method="post" action="{% url 'scenario_create' %}" class="space-y-3 pt-3 border-t border-gray-800">
+        {% csrf_token %}
+        <input type="hidden" name="set_id" value="{{ selected.id }}">
+        <div class="grid grid-cols-2 gap-3">
+          <input type="text" name="name" placeholder="Scenario name" required
+                 class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+          <input type="text" name="category" placeholder="Category (optional)"
+                 class="px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50">
+        </div>
+        <textarea name="description" rows="2" placeholder="Description / expected behavior..."
+                  class="w-full px-3 py-2 rounded-lg bg-surface-overlay border border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"></textarea>
+        <button class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover">+ Add Scenario</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="bg-surface-raised rounded-xl border border-gray-800 p-8 text-center">
+      <p class="text-sm text-gray-500">Select a scenario set to view its contents.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

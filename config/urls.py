@@ -8,7 +8,26 @@ from django.urls import include, path
 from django.views.static import serve as _static_serve
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.ui import spa
+from core.ui import (
+    AuditCancelView,
+    AuditDetailView,
+    CompareView,
+    DashboardView,
+    IndexView,
+    LoginView,
+    ModelDeleteView,
+    ModelsView,
+    NewAuditView,
+    QueueView,
+    RegisterView,
+    ScenarioCreateView,
+    ScenarioDeleteView,
+    ScenarioExportView,
+    ScenarioImportView,
+    ScenarioPublishView,
+    ScenariosView,
+    logout_view,
+)
 from core.views import healthz, readyz
 
 # --- Static file serving ---------------------------------------------------
@@ -35,12 +54,12 @@ def _serve_static(request, path):
 
 
 # --- URL patterns ----------------------------------------------------------
-# Order matters: static + API routes must come BEFORE the SPA catch-all.
 urlpatterns = [
     path("static/<path:path>", _serve_static, name="static-serve"),
     path("admin/", admin.site.urls),
     path("healthz", healthz, name="healthz"),
     path("readyz", readyz, name="readyz"),
+    # API
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/auth/", include("core.auth_urls")),
@@ -48,6 +67,23 @@ urlpatterns = [
     path("api/", include("core.scenario_urls")),
     path("api/", include("core.model_registry_urls")),
     path("api/", include("core.audit_urls")),
-    # SPA shell for all non-API, non-static routes (client-side navigation).
-    path("", spa, name="spa"),
+    # UI (server-rendered CBVs)
+    path("", IndexView.as_view(), name="index"),
+    path("login/", LoginView.as_view(), name="login"),
+    path("register/", RegisterView.as_view(), name="register"),
+    path("logout/", logout_view, name="logout"),
+    path("dashboard/", DashboardView.as_view(), name="dashboard"),
+    path("audits/new/", NewAuditView.as_view(), name="new_audit"),
+    path("queue/", QueueView.as_view(), name="queue"),
+    path("scenarios/", ScenariosView.as_view(), name="scenarios"),
+    path("scenarios/create/", ScenarioCreateView.as_view(), name="scenario_create"),
+    path("scenarios/delete/<int:scenario_id>/", ScenarioDeleteView.as_view(), name="scenario_delete"),
+    path("scenarios/<int:set_id>/publish/", ScenarioPublishView.as_view(), name="scenario_publish"),
+    path("scenarios/<int:set_id>/export/", ScenarioExportView.as_view(), name="scenario_export"),
+    path("scenarios/<int:set_id>/import/", ScenarioImportView.as_view(), name="scenario_import"),
+    path("models/", ModelsView.as_view(), name="models"),
+    path("models/delete/<int:endpoint_id>/", ModelDeleteView.as_view(), name="model_delete"),
+    path("compare/", CompareView.as_view(), name="compare"),
+    path("audits/<int:run_id>/", AuditDetailView.as_view(), name="audit_detail"),
+    path("audits/<int:run_id>/cancel/", AuditCancelView.as_view(), name="audit_cancel"),
 ]
