@@ -76,11 +76,13 @@ class CsrfCookieMiddleware(MiddlewareMixin):
 
     def process_request(self, request):
         if hasattr(request, "user") and request.user.is_authenticated:
-            from django.middleware.csrf import _add_new_csrf_cookie
+            from django.middleware.csrf import get_token
 
-            # Generates a secret in request.META and marks it for update;
-            # CsrfViewMiddleware.process_response then sets the cookie.
-            _add_new_csrf_cookie(request)
+            # get_token() is the public API that populates request.META['CSRF_COOKIE']
+            # and marks it for update; CsrfViewMiddleware.process_response then sets
+            # the cookie. The private _add_new_csrf_cookie() does not set the META key
+            # and causes a KeyError in process_response.
+            get_token(request)
 
 
 class ProjectMiddleware(MiddlewareMixin):
