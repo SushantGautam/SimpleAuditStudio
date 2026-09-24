@@ -18,7 +18,7 @@ this module wires the same task shape to the real components:
 Real Target -> Auditor -> Judge execution is wired through ``core.engine``: each
 scenario builds a ``ModelAuditor`` from the frozen endpoint snapshots on the run
 and calls ``run_scenario`` once. The engine is imported lazily, so if it is not
-installed (e.g. in a web-only process or a test without SIMPLEAUDIT_ENGINE_PATH)
+installed (e.g. in a web-only process or a test without the engine package)
 the scenario fails with a recorded ``EngineError`` rather than crashing import.
 The durable plumbing — retries, cancellation, idempotency, progress events,
 version guard — is fully live and mirrors the validated spike.
@@ -37,12 +37,18 @@ from django.utils import timezone
 from hatchet_sdk import ClientConfig, Context, Hatchet, Worker
 from hatchet_sdk.config import ClientTLSConfig
 
+from infra.simpleaudit_package import resolve_engine_provenance
+
 logger = logging.getLogger(__name__)
 
-# Engine provenance the worker "loaded". In production this is read from the
-# installed SimpleAudit package + git describe at worker startup.
-WORKER_SIMPLEAUDIT_VERSION = os.environ.get("SIMPLEAUDIT_VERSION", "")
-WORKER_GIT_COMMIT = os.environ.get("SIMPLEAUDIT_GIT_COMMIT", "unknown")
+# Engine provenance the worker "loaded", resolved from the installed SimpleAudit
+# package metadata (version) and its PEP 610 direct_url commit (optional). This
+# replaces the old SIMPLEAUDIT_VERSION / SIMPLEAUDIT_GIT_COMMIT env vars: the
+# worker can no longer be told a provenance that differs from what it actually
+# has installed, which is what makes the finalize guard meaningful.
+_PROVENANCE = resolve_engine_provenance()
+WORKER_SIMPLEAUDIT_VERSION = _PROVENANCE.version or ""
+WORKER_GIT_COMMIT = _PROVENANCE.commit or ""
 
 
 class ScenarioInput(BaseModel):
@@ -278,11 +284,16 @@ def _run_finalize_impl(workflow_input: FinalizeInput, ctx: Context) -> dict:
     expected_version = workflow_input.simpleaudit_version
     expected_commit = workflow_input.git_commit
 
+    # Version is authoritative provenance: a mismatch means the worker's engine
+    # differs from what the run was frozen against, so the run must fail.
     if expected_version and expected_version != WORKER_SIMPLEAUDIT_VERSION:
         append_event(run_id, "_run", "run_failed", {"code": "SIMPLEAUDIT_VERSION_MISMATCH"})
         _mark_run_failed(run_id, "SIMPLEAUDIT_VERSION_MISMATCH")
         raise RuntimeError("SIMPLEAUDIT_VERSION_MISMATCH")
-    if expected_commit and expected_commit != WORKER_GIT_COMMIT:
+    # Commit is optional provenance (absent for registry installs). It is only
+    # enforced when BOTH the frozen manifest and the loaded engine carry a
+    # commit; otherwise there is nothing comparable and we do not fail the run.
+    if expected_commit and WORKER_GIT_COMMIT and expected_commit != WORKER_GIT_COMMIT:
         append_event(run_id, "_run", "run_failed", {"code": "SIMPLEAUDIT_VERSION_MISMATCH"})
         _mark_run_failed(run_id, "SIMPLEAUDIT_VERSION_MISMATCH")
         raise RuntimeError("SIMPLEAUDIT_VERSION_MISMATCH")

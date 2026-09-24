@@ -1,4 +1,4 @@
-"""WSGI config for SimpleAudit Platform."""
+"""WSGI config for SimpleAudit Studio."""
 import os
 
 from django.core.wsgi import get_wsgi_application

@@ -46,5 +46,3 @@ class AuditRunCreateSerializer(serializers.Serializer):
     auditor_endpoint_id = serializers.IntegerField()
     judge_endpoint_id = serializers.IntegerField()
     audit_profile_id = serializers.IntegerField(required=False, allow_null=True)
-    simpleaudit_version = serializers.CharField(required=False, allow_blank=True)
-    git_commit = serializers.CharField(required=False, allow_blank=True)

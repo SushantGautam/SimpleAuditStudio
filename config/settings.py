@@ -1,4 +1,4 @@
-"""Django settings for the production SimpleAudit Platform.
+"""Django settings for the production SimpleAudit Studio.
 
 The canonical runtime is Docker Compose with PostgreSQL, MinIO, and a durable
 workflow system. SQLite is intentionally not configured here.
@@ -36,7 +36,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "drf_spectacular",
-    # SimpleAudit Platform apps
+    # SimpleAudit Studio apps
     "accounts",
     "scenarios",
     "model_registry",
@@ -138,7 +138,7 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "SimpleAudit Platform API",
+    "TITLE": "SimpleAudit Studio API",
     "DESCRIPTION": "Production API for reproducible AI audits.",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -164,11 +164,10 @@ HATCHET_API_KEY = os.environ.get("HATCHET_API_KEY", "")
 # Set to "tls" or "mtls" (with HATCHET_CLIENT_TLS_* env vars) for TLS deployments.
 HATCHET_TLS_STRATEGY = os.environ.get("HATCHET_TLS_STRATEGY", "none")
 WORKER_POOL = os.environ.get("WORKER_POOL", "cpu")
-# SimpleAudit engine provenance stamped into every frozen AuditRun manifest so
-# historical results remain interpretable. The worker's version guard compares
-# these against its own pinned checkout, so web and worker must agree.
-SIMPLEAUDIT_VERSION = os.environ.get("SIMPLEAUDIT_VERSION", "")
-SIMPLEAUDIT_GIT_COMMIT = os.environ.get("SIMPLEAUDIT_GIT_COMMIT", "unknown")
+# NOTE: SimpleAudit engine provenance (version + optional commit) is NOT a
+# setting here. It is resolved from the installed package metadata at runtime by
+# infra.simpleaudit_package.resolve_engine_provenance(), so the web and worker
+# always agree on what engine they actually have. See that module for details.
 MAX_CONCURRENT_AUDITS = int(os.environ.get("MAX_CONCURRENT_AUDITS", "2"))
 MAX_SCENARIOS_PER_RUN = int(os.environ.get("MAX_SCENARIOS_PER_RUN", "500"))
 SSE_MAX_CONNECTIONS_PER_USER = int(os.environ.get("SSE_MAX_CONNECTIONS_PER_USER", "10"))

@@ -1,4 +1,4 @@
-"""ASGI config for SimpleAudit Platform."""
+"""ASGI config for SimpleAudit Studio."""
 import os
 
 from django.core.asgi import get_asgi_application

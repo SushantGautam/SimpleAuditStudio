@@ -1,4 +1,4 @@
-# SimpleAudit Platform Roadmap
+# SimpleAudit Studio Roadmap
 
 Status: implementation in progress after Phase 0 review  
 Date: 2026-09-22

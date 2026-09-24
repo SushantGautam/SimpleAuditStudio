@@ -6,7 +6,6 @@ submit audit run → verify frozen manifest → poll events → compare runs.
 This is the "another developer can run this" integration test that validates
 the entire user journey without requiring a live worker or Docker stack.
 """
-from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from audits.events import ScenarioResult
@@ -22,7 +21,6 @@ from scenarios.models import (
 )
 
 
-@override_settings(SIMPLEAUDIT_VERSION="0.1.9", SIMPLEAUDIT_GIT_COMMIT="bc32a753")
 class APIE2ETest(APITestCase):
     """Full user journey via the REST API (no live worker)."""
 

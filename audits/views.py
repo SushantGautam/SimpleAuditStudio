@@ -134,8 +134,6 @@ def create_audit_run_view(request, project_id):
         auditor_endpoint=auditor_endpoint,
         judge_endpoint=judge_endpoint,
         audit_profile=audit_profile,
-        simpleaudit_version=data.get("simpleaudit_version") or None,
-        git_commit=data.get("git_commit") or None,
     )
 
     # Enqueue durable work. This is best-effort: if the job system is unavailable

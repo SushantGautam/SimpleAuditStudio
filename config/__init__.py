@@ -1,1 +1,1 @@
-"""Django project package for SimpleAudit Platform."""
+"""Django project package for SimpleAudit Studio."""

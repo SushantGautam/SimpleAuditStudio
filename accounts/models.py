@@ -13,7 +13,7 @@ from django.db import models
 
 
 class User(AbstractUser):
-    """Platform user with stable identity for audit attribution.
+    """Studio user with stable identity for audit attribution.
 
     This is the AUTH_USER_MODEL. The inherited M2M fields are given explicit
     related_names so they do not clash with auth.User's reverse accessors.

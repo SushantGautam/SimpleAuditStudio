@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Django management entrypoint for the production SimpleAudit Platform."""
+"""Django management entrypoint for the production SimpleAudit Studio."""
 import os
 import sys
 

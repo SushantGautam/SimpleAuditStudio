@@ -1,4 +1,4 @@
-# SimpleAudit Platform — Product Requirements
+# SimpleAudit Studio — Product Requirements
 
 Status: Phase 0 draft for independent review  
 Date: 2026-09-22  
@@ -7,7 +7,7 @@ Implementation status: no production implementation approved yet
 
 ## 1. Purpose
 
-SimpleAudit Platform should let an organization run, track, compare, and reproduce AI safety audits without requiring users to understand Python scripts, JSON payloads, queue internals, model endpoints, or worker processes.
+SimpleAudit Studio should let an organization run, track, compare, and reproduce AI safety audits without requiring users to understand Python scripts, JSON payloads, queue internals, model endpoints, or worker processes.
 
 The platform wraps the existing SimpleAudit engine and visualizer. It does not replace SimpleAudit’s scientific semantics. Its product responsibilities are:
 

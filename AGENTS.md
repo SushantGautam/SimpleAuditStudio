@@ -1,10 +1,10 @@
-# SimpleAudit Platform — Production Engineering Mission
+# SimpleAudit Studio — Production Engineering Mission
 
-The current `~/simpleaudit-platform` implementation is a **prototype/POC only**.
+The current `~/simpleaudit-studio` implementation is a **prototype/POC only**.
 
 DO NOT continue treating the existing implementation as the desired architecture.
 
-We are building a **mature, production-quality, self-hostable SimpleAudit Platform** that other organizations and researchers can clone/deploy and use for real AI audits.
+We are building a **mature, production-quality, self-hostable SimpleAudit Studio** that other organizations and researchers can clone/deploy and use for real AI audits.
 
 The final system must be:
 
@@ -44,7 +44,7 @@ Before implementing further, inspect:
 
 1. the existing SimpleAudit repository/core
 2. the existing SimpleAudit Visualizer
-3. `~/simpleaudit-platform`
+3. `~/simpleaudit-studio`
 4. `~/simpleaudit-experiment`
 5. existing data formats/results
 6. existing ModelAuditor interfaces

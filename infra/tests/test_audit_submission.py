@@ -4,7 +4,7 @@ Verifies that submitting a frozen AuditRun degrades gracefully when no live
 Hatchet server is available: the run stays queued, the reason is recorded in
 runtime_metadata, and the immutable frozen inputs are untouched.
 """
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from audits.models import AuditRun
 from audits.services import create_audit_run, submit_audit_run
@@ -48,20 +48,23 @@ class AuditSubmissionTest(TestCase):
             base_url="https://judge.invalid/v1", model_id="judge-model", secret_reference="JUDGE_KEY",
         )
 
-    @override_settings(SIMPLEAUDIT_GIT_COMMIT="deadbeef")
     def _make_run(self) -> AuditRun:
-        return create_audit_run(
-            project=self.project,
-            user=self.user,
-            name="Baseline",
-            scenario_set_version=self.version,
-            target_endpoint=self.target,
-            auditor_endpoint=self.auditor,
-            judge_endpoint=self.judge,
-            simpleaudit_version="0.1.0",
-        )
+        from unittest import mock
 
-    @override_settings(SIMPLEAUDIT_GIT_COMMIT="deadbeef")
+        with mock.patch(
+            "audits.services.resolve_engine_provenance",
+            return_value=mock.Mock(version="0.1.0", commit="deadbeef", source="metadata"),
+        ):
+            return create_audit_run(
+                project=self.project,
+                user=self.user,
+                name="Baseline",
+                scenario_set_version=self.version,
+                target_endpoint=self.target,
+                auditor_endpoint=self.auditor,
+                judge_endpoint=self.judge,
+            )
+
     def test_submit_without_live_server_keeps_run_queued_and_records_reason(self):
         run = self._make_run()
         snapshot_before = run.target_config_snapshot

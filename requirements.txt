@@ -12,10 +12,11 @@ pydantic>=2.7,<3
 sentry-sdk[django]>=2.0
 
 # --- SimpleAudit engine (Target -> Auditor -> Judge) ---
-# The engine itself is vendored via SIMPLEAUDIT_ENGINE_PATH (a git checkout of
-# https://github.com/kelkalot/simpleaudit); these are its runtime dependencies,
-# required by the worker to execute real audits. The web process never imports
-# them (core.engine loads lazily), so a web-only deployment could omit this block.
-any-llm-sdk>=1.14.0
-fsspec>=2023.1.0
-tqdm>=4.66.0
+# The engine is a normal pip dependency. It is pinned to a git ref (not a PyPI
+# release) because the current n_repetitions feature (AuditExperiment.run_scenario_reps)
+# is not yet in a published release; the ref's own pyproject.toml declares
+# version 0.1.13, which importlib.metadata reports at runtime. Provenance
+# (version + commit) is read from the installed package metadata automatically —
+# see infra/simpleaudit_package.py. To develop against an unmerged revision, add
+# a gitignored simpleaudit-dependency.yaml with a `git_ref:` key (dev only).
+simpleaudit @ git+https://github.com/kelkalot/simpleaudit.git@d19785f0d9d3bd9cb647b519c08661cbab0c4d60

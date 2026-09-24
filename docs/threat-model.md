@@ -1,4 +1,4 @@
-# SimpleAudit Platform — Threat Model
+# SimpleAudit Studio — Threat Model
 
 Status: Phase 0 draft for independent review  
 Date: 2026-09-22  

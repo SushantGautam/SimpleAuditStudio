@@ -26,31 +26,22 @@ class EngineError(RuntimeError):
     """Raised when the SimpleAudit engine cannot be loaded or a scenario fails."""
 
 
-def _ensure_engine_on_path() -> None:
-    """Make the SimpleAudit package importable if it is not already installed.
+def _ensure_engine_available() -> None:
+    """Ensure the SimpleAudit engine package is importable.
 
-    The canonical deployment installs ``simpleaudit`` into the worker image. For
-    local development the engine may live in a sibling checkout; point
-    ``SIMPLEAUDIT_ENGINE_PATH`` at the repo root (the directory containing the
-    ``simpleaudit/`` package) to add it to ``sys.path``.
+    The engine is a normal pip dependency (see ``requirements.txt``); there is no
+    path-based fallback. If it is not installed (e.g. a web-only process or a
+    test environment without the engine), raise a clean ``EngineError`` so the
+    caller can record a durable failure instead of crashing on import.
     """
     try:
         import simpleaudit  # noqa: F401
         return
-    except ModuleNotFoundError:
-        pass
-
-    engine_path = os.environ.get("SIMPLEAUDIT_ENGINE_PATH", "").strip()
-    if not engine_path:
+    except ModuleNotFoundError as exc:
         raise EngineError(
-            "SimpleAudit engine is not installed and SIMPLEAUDIT_ENGINE_PATH is not set. "
-            "Install the engine into the worker image or point SIMPLEAUDIT_ENGINE_PATH "
-            "at the SimpleAudit repo root."
-        )
-    if not os.path.isdir(engine_path):
-        raise EngineError(f"SIMPLEAUDIT_ENGINE_PATH does not exist: {engine_path}")
-    if engine_path not in sys.path:
-        sys.path.insert(0, engine_path)
+            "SimpleAudit engine is not installed. Install it from requirements.txt "
+            "(pip install -r requirements.txt) before running audits."
+        ) from exc
 
 
 def _resolve_secret(secret_reference: str | None, api_key_direct: str | None = None) -> str | None:
@@ -174,7 +165,7 @@ def build_model_auditor(*, target: dict, auditor: dict, judge: dict, generation:
     Returns the configured ``ModelAuditor`` instance. Raises ``EngineError`` if
     the engine cannot be imported.
     """
-    _ensure_engine_on_path()
+    _ensure_engine_available()
     try:
         from simpleaudit.model_auditor import ModelAuditor
     except Exception as exc:  # noqa: BLE001 - surface any import failure uniformly
@@ -367,7 +358,7 @@ def run_scenario_repeated(
     # Build a single-model AuditExperiment configured from the frozen snapshots.
     # This reuses the engine's _merge_common + ModelAuditor construction path,
     # including its retry logic and error handling.
-    _ensure_engine_on_path()
+    _ensure_engine_available()
     try:
         from simpleaudit.experiment import AuditExperiment
     except ImportError:

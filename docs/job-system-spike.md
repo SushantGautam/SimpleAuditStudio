@@ -100,7 +100,7 @@ The spike lives in `spike/`:
 
 ```bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
-cd simpleaudit-platform
+cd simpleaudit-studio
 # clean slate
 pkill -9 -f "spike.run_spike"; pkill -9 -f "hatchet-embedded-sidecar"; pkill -9 -f "spike/.embedded-pg"
 rm -f spike/events.sqlite3

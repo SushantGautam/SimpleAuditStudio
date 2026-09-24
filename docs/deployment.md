@@ -1,4 +1,4 @@
-# SimpleAudit Platform — Deployment
+# SimpleAudit Studio — Deployment
 
 Status: Phase 0 draft for independent review  
 Date: 2026-09-22  
@@ -10,7 +10,7 @@ A new user should be able to deploy a functional self-hosted instance with minim
 
 ```bash
 git clone <repository>
-cd simpleaudit-platform
+cd simpleaudit-studio
 cp .env.example .env
 # edit required secrets/settings
 docker compose up -d
@@ -132,8 +132,6 @@ Configuration is split into:
 - `MAX_CONCURRENT_AUDITS`
 - `MAX_SCENARIOS_PER_RUN` — single source of truth for scenario count validation
 - `SSE_MAX_CONNECTIONS_PER_USER`
-- `SIMPLEAUDIT_VERSION` / `SIMPLEAUDIT_GIT_COMMIT` — must match the engine commit vendored into the worker image (Dockerfile `SIMPLEAUDIT_COMMIT`); the worker's provenance guard fails runs on mismatch
-- `SIMPLEAUDIT_ENGINE_PATH` — where the engine package lives (`/opt/simpleaudit` in the image; a checkout path in local dev)
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
 - `LANGFUSE_PUBLIC_KEY`
 - `LANGFUSE_SECRET_KEY`
@@ -157,7 +155,9 @@ Startup secret validation:
 
 - refuse to boot in production if required values remain `change-me`
 - refuse to boot if `DJANGO_DEBUG=true` with public allowed hosts
-- warn or fail if `SIMPLEAUDIT_GIT_COMMIT=unknown` in production
+- the worker resolves SimpleAudit provenance from installed package metadata at
+  startup; a run whose frozen version disagrees with the loaded engine fails with
+  `SIMPLEAUDIT_VERSION_MISMATCH` (see `infra/simpleaudit_package.py`)
 - validate database/object storage/workflow connectivity during readiness checks
 
 ### 4.3 `.env.example`
@@ -188,9 +188,8 @@ WORKER_POOL=cpu
 MAX_CONCURRENT_AUDITS=2
 MAX_SCENARIOS_PER_RUN=500
 
-SIMPLEAUDIT_VERSION=0.1.13
-SIMPLEAUDIT_GIT_COMMIT=d19785f0d9d3bd9cb647b519c08661cbab0c4d60
-SIMPLEAUDIT_ENGINE_PATH=/opt/simpleaudit
+# SimpleAudit engine: no env vars needed. It is a pip dependency pinned in
+# requirements.txt; provenance is read from installed package metadata.
 
 # Optional observability
 OTEL_EXPORTER_OTLP_ENDPOINT=

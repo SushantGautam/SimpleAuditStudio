@@ -3,31 +3,21 @@ FROM python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    DJANGO_SETTINGS_MODULE=config.settings \
-    # The SimpleAudit engine (Target -> Auditor -> Judge) is vendored from a
-    # pinned git checkout at build time. core.engine loads it lazily from this
-    # path; the web process never imports it, only the worker does.
-    SIMPLEAUDIT_ENGINE_PATH=/opt/simpleaudit
-
-# Pin the engine commit for reproducible builds. Override with
-# --build-arg SIMPLEAUDIT_COMMIT=<sha> to audit against a different revision.
-ARG SIMPLEAUDIT_REPO=https://github.com/kelkalot/simpleaudit.git
-ARG SIMPLEAUDIT_COMMIT=d19785f
+    DJANGO_SETTINGS_MODULE=config.settings
 
 WORKDIR /app
 
+# git is required to install the SimpleAudit engine from its pinned git ref
+# (declared in requirements.txt); curl is used by the healthcheck.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# Installs the platform deps AND the SimpleAudit engine (a normal pip dependency
+# pinned to a git ref in requirements.txt). Provenance (version + commit) is read
+# from the installed package metadata at runtime — no manual pinning here.
 RUN pip install -r requirements.txt
-
-# Vendor the SimpleAudit engine at a pinned commit so audits are reproducible
-# and the image is self-contained (no sibling checkout required at runtime).
-RUN git clone --quiet "$SIMPLEAUDIT_REPO" /opt/simpleaudit \
-    && git -C /opt/simpleaudit checkout --quiet "$SIMPLEAUDIT_COMMIT" \
-    && git -C /opt/simpleaudit rev-parse HEAD > /opt/simpleaudit/.pinned_commit
 
 COPY . .
 
@@ -37,7 +27,7 @@ RUN python manage.py collectstatic --noinput
 
 RUN useradd --create-home appuser \
     && mkdir -p /app/staticfiles /app/media \
-    && chown -R appuser:appuser /app /opt/simpleaudit
+    && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000

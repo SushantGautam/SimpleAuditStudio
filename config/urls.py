@@ -1,4 +1,4 @@
-"""Root URL configuration for SimpleAudit Platform."""
+"""Root URL configuration for SimpleAudit Studio."""
 import os as _os
 
 from django.conf import settings

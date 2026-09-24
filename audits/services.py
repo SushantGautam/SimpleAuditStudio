@@ -8,6 +8,7 @@ from django.utils import timezone
 from audits.events import append_event
 from audits.models import AuditRun
 from infra.exceptions import StableAPIError
+from infra.simpleaudit_package import resolve_engine_provenance
 from model_registry.models import AuditProfile, ModelEndpoint
 from accounts.models import Project
 from scenarios.models import ScenarioSetVersion
@@ -79,8 +80,6 @@ def create_audit_run(
     auditor_endpoint: ModelEndpoint,
     judge_endpoint: ModelEndpoint,
     audit_profile: AuditProfile | None = None,
-    simpleaudit_version: str | None = None,
-    git_commit: str | None = None,
     max_turns_override: int | None = None,
     language_override: str | None = None,
     n_repetitions_override: int | None = None,
@@ -100,11 +99,17 @@ def create_audit_run(
     if audit_profile and audit_profile.project_id != project.id:
         raise StableAPIError(detail="Audit profile belongs to another project.", code="cross_project_input")
 
-    resolved_version = simpleaudit_version or getattr(settings, "SIMPLEAUDIT_VERSION", "")
-    resolved_commit = git_commit or getattr(settings, "SIMPLEAUDIT_GIT_COMMIT", "")
-    if not resolved_version or not resolved_commit or resolved_commit == "unknown":
+    # Provenance is authoritative: it comes from the installed SimpleAudit
+    # package metadata (version) and its PEP 610 direct_url commit (optional).
+    # Callers cannot supply their own — that would let a manifest claim an engine
+    # the worker does not actually have. The version is required; the commit is
+    # optional (registry installs have none).
+    provenance = resolve_engine_provenance()
+    resolved_version = provenance.version or ""
+    resolved_commit = provenance.commit or ""
+    if not resolved_version:
         raise StableAPIError(
-            detail="SimpleAudit version and git commit are required before creating production audit runs.",
+            detail="SimpleAudit engine is not installed; cannot create an audit run without engine provenance.",
             code="simpleaudit_provenance_required",
         )
 

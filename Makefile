@@ -1,4 +1,4 @@
-# SimpleAudit Platform — common development tasks.
+# SimpleAudit Studio — common development tasks.
 #
 # Local (non-Docker) development uses the venv at .venv and the .env file
 # (loaded automatically by manage.py). Docker targets use docker compose.

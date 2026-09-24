@@ -57,20 +57,26 @@ class AuditRunFreezeTests(TestCase):
             secret_reference="JUDGE_KEY",
         )
 
-    @override_settings(SIMPLEAUDIT_GIT_COMMIT="deadbeef")
-    def test_create_audit_run_freezes_inputs_and_requires_provenance(self):
-        response = self.client.post(
-            f"/api/projects/{self.project.id}/audit-runs/create/",
-            {
-                "name": "Baseline audit",
-                "scenario_set_version_id": self.version.id,
-                "target_endpoint_id": self.target.id,
-                "auditor_endpoint_id": self.auditor.id,
-                "judge_endpoint_id": self.judge.id,
-                "simpleaudit_version": "0.1.0",
-            },
-            format="json",
-        )
+    def test_create_audit_run_freezes_inputs_and_stamps_metadata_provenance(self):
+        from unittest import mock
+
+        # Provenance is authoritative: it comes from the installed package
+        # metadata, not from the request body or settings.
+        with mock.patch(
+            "audits.services.resolve_engine_provenance",
+            return_value=mock.Mock(version="0.1.0", commit="deadbeef", source="metadata"),
+        ):
+            response = self.client.post(
+                f"/api/projects/{self.project.id}/audit-runs/create/",
+                {
+                    "name": "Baseline audit",
+                    "scenario_set_version_id": self.version.id,
+                    "target_endpoint_id": self.target.id,
+                    "auditor_endpoint_id": self.auditor.id,
+                    "judge_endpoint_id": self.judge.id,
+                },
+                format="json",
+            )
         assert response.status_code == 201, response.content
         payload = response.json()
         run = AuditRun.objects.get(id=payload["id"])
@@ -89,20 +95,49 @@ class AuditRunFreezeTests(TestCase):
         assert detail_payload["target_config_snapshot"]["model_id"] == "target-model"
         assert detail_payload["simpleaudit_version"] == "0.1.0"
 
-    @override_settings(SIMPLEAUDIT_GIT_COMMIT="unknown")
-    def test_create_audit_run_refuses_unknown_git_commit(self):
-        response = self.client.post(
-            f"/api/projects/{self.project.id}/audit-runs/create/",
-            {
-                "name": "Bad provenance",
-                "scenario_set_version_id": self.version.id,
-                "target_endpoint_id": self.target.id,
-                "auditor_endpoint_id": self.auditor.id,
-                "judge_endpoint_id": self.judge.id,
-                "simpleaudit_version": "0.1.0",
-            },
-            format="json",
-        )
+    def test_create_audit_run_allows_missing_commit_for_registry_install(self):
+        from unittest import mock
+
+        # A registry install has no git commit; that must NOT block run creation.
+        with mock.patch(
+            "audits.services.resolve_engine_provenance",
+            return_value=mock.Mock(version="0.1.13", commit=None, source="metadata"),
+        ):
+            response = self.client.post(
+                f"/api/projects/{self.project.id}/audit-runs/create/",
+                {
+                    "name": "Registry install run",
+                    "scenario_set_version_id": self.version.id,
+                    "target_endpoint_id": self.target.id,
+                    "auditor_endpoint_id": self.auditor.id,
+                    "judge_endpoint_id": self.judge.id,
+                },
+                format="json",
+            )
+        assert response.status_code == 201, response.content
+        run = AuditRun.objects.get(id=response.json()["id"])
+        assert run.simpleaudit_version == "0.1.13"
+        assert run.git_commit == ""
+
+    def test_create_audit_run_refuses_when_engine_not_installed(self):
+        from unittest import mock
+
+        # No engine installed -> no version -> run creation must be refused.
+        with mock.patch(
+            "audits.services.resolve_engine_provenance",
+            return_value=mock.Mock(version=None, commit=None, source="unavailable"),
+        ):
+            response = self.client.post(
+                f"/api/projects/{self.project.id}/audit-runs/create/",
+                {
+                    "name": "No engine",
+                    "scenario_set_version_id": self.version.id,
+                    "target_endpoint_id": self.target.id,
+                    "auditor_endpoint_id": self.auditor.id,
+                    "judge_endpoint_id": self.judge.id,
+                },
+                format="json",
+            )
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "simpleaudit_provenance_required"
 

@@ -1,4 +1,4 @@
-# SimpleAudit Platform — Architecture
+# SimpleAudit Studio — Architecture
 
 Status: Phase 0 draft for independent review  
 Date: 2026-09-22  

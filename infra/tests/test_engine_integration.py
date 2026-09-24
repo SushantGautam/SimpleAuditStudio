@@ -150,10 +150,10 @@ class EngineIntegrationTest(TestCase):
         ProjectMembership.objects.create(project=self.project, user=self.user, role=ProjectMembership.Role.AUDITOR)
 
     def test_engine_raises_clean_error_when_unavailable(self):
-        from infra.engine import EngineError, _ensure_engine_on_path, run_scenario
+        from infra.engine import EngineError, _ensure_engine_available, run_scenario
 
-        # Force the engine import to fail (covers both pip-installed and path-based).
-        with mock.patch("infra.engine._ensure_engine_on_path", side_effect=EngineError("no engine")):
+        # Force the engine import to fail (engine not installed).
+        with mock.patch("infra.engine._ensure_engine_available", side_effect=EngineError("no engine")):
             with self.assertRaises(EngineError):
                 run_scenario(
                     name="dose", description="d", expected_behavior=None, test_prompt=None,
@@ -166,7 +166,7 @@ class EngineIntegrationTest(TestCase):
 
         run, item = _build_run(self.user, self.project)
         # Force the engine import to fail inside the worker's execution path.
-        with mock.patch("infra.engine._ensure_engine_on_path", side_effect=EngineError("no engine")):
+        with mock.patch("infra.engine._ensure_engine_available", side_effect=EngineError("no engine")):
             with self.assertRaises(EngineError):
                 worker._scenario_execute_impl(worker.ScenarioInput(run_id=str(run.id), version_item_id=str(item.id)), ctx=None)
 

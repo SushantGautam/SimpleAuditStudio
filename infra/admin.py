@@ -1,1 +1,1 @@
-# Platform infrastructure has no models to register.
+# Studio infrastructure has no models to register.

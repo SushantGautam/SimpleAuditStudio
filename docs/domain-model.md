@@ -1,4 +1,4 @@
-# SimpleAudit Platform — Domain Model
+# SimpleAudit Studio — Domain Model
 
 Status: Phase 0 draft for independent review  
 Date: 2026-09-22  

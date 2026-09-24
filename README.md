@@ -1,4 +1,4 @@
-# SimpleAudit Platform
+# SimpleAudit Studio
 
 A production-quality, self-hostable platform for running AI model audits using
 the [SimpleAudit](https://github.com/kelkalot/simpleaudit) engine (Target →
@@ -43,8 +43,8 @@ Key properties:
 ## Quick start (Docker Compose)
 
 ```bash
-git clone <repo-url> simpleaudit-platform
-cd simpleaudit-platform
+git clone <repo-url> simpleaudit-studio
+cd simpleaudit-studio
 cp .env.example .env
 # Edit .env: set POSTGRES_PASSWORD, BOOTSTRAP_ADMIN_* etc.
 docker compose up -d
@@ -88,8 +88,7 @@ docker compose cp hatchet-server:/config/authdisabled-token ./hatchet-token
 #    HATCHET_SERVER_URL=http://localhost:8888
 #    HATCHET_GRPC_URL=localhost:7077
 #    HATCHET_TOKEN_FILE=./hatchet-token
-#    SIMPLEAUDIT_ENGINE_PATH=/path/to/simpleaudit   (repo root)
-#    SIMPLEAUDIT_GIT_COMMIT=$(git -C /path/to/simpleaudit rev-parse HEAD)
+#    (no SimpleAudit config needed — see below)
 
 # 4. Terminal A: web server
 python manage.py runserver
@@ -98,15 +97,17 @@ python manage.py runserver
 python manage.py run_worker --pool cpu
 ```
 
-The Hatchet dashboard is at http://localhost:8888. `SIMPLEAUDIT_VERSION` /
-`SIMPLEAUDIT_GIT_COMMIT` must describe the checkout you point
-`SIMPLEAUDIT_ENGINE_PATH` at — the worker's provenance guard fails any run
-whose frozen manifest disagrees with the engine it loaded.
+The Hatchet dashboard is at http://localhost:8888. The SimpleAudit engine is a
+normal pip dependency pinned in `requirements.txt`; its version + optional git
+commit are read from the installed package metadata automatically
+(`infra/simpleaudit_package.py`). To develop against an unmerged revision, create
+a gitignored `simpleaudit-dependency.yaml` at the project root with a single
+`git_ref:` key — do not edit `requirements.txt`.
 
 ## Running tests
 
 ```bash
-# SQLite (fast, no external deps) — 92 tests
+# SQLite (fast, no external deps) — 93 tests
 SIMPLEAUDIT_LOCAL_SQLITE=1 python manage.py test infra
 
 # PostgreSQL (requires a running instance)
@@ -201,7 +202,7 @@ Comparison          saved comparisons
 This section documents the deprecated prototype only.
 
 ```bash
-cd simpleaudit-platform
+cd simpleaudit-studio
 
 # 1. Configure the gateway key in .env
 #    SIMULACHAT_API_KEY=sk-...
